@@ -66,6 +66,7 @@ export class Enemy {
     this.forward = { x: 0, z: 1 };
 
     this.isDead = false;
+    this.sealed = false; // 콜로세움 몬스터가 레벨 결계 뒤에서 잠들어 있을 때 true
     this.deathTimer = 0;
     this.respawnTimer = 0;
     this.hitFlashTimer = 0;
@@ -96,7 +97,7 @@ export class Enemy {
   }
 
   takeDamage(amount) {
-    if (this.isDead) return;
+    if (this.isDead || this.sealed) return;
     this.hp -= amount;
     this.hitFlashTimer = 0.15;
     if (this.hp <= 0) {
@@ -107,20 +108,21 @@ export class Enemy {
   }
 
   applyBurn(dps, duration) {
-    if (this.isDead) return;
+    if (this.isDead || this.sealed) return;
     if (!this.burn || this.burn.timer < duration) {
       this.burn = { dps, timer: duration };
     }
   }
 
   applySlow(mult, duration) {
-    if (this.isDead) return;
+    if (this.isDead || this.sealed) return;
     if (!this.slow || this.slow.timer < duration) {
       this.slow = { mult, timer: duration };
     }
   }
 
   update(dt, playerGroup, onAttackPlayer) {
+    if (this.sealed) return;
     if (this.isDead) {
       if (this.deathTimer > -RESPAWN_DELAY) {
         this.deathTimer -= dt;

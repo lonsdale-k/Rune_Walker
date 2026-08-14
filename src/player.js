@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { SKILL_TREE } from './skillTree.js';
-import { FINAL_BOSS_POS, GATE_RADIUS } from './world.js';
+import { FINAL_BOSS_POS, OUTER_GATE_RADIUS, INNER_GATE_RADIUS } from './world.js';
 
 const BASE_MAX_HP = 100;
 const BASE_MOVE_SPEED = 6.5;
@@ -19,7 +19,7 @@ const CHAIN_RADIUS = 3.5;
 export class Player {
   constructor(scene) {
     this.group = buildPlayerMesh();
-    this.group.position.set(-40, 0, -25);
+    this.group.position.set(0, 0, 8);
     scene.add(this.group);
 
     this.forward = { x: 0, z: -1 };
@@ -90,6 +90,16 @@ export class Player {
     this.hasSpecial5 = skillState.hasNode('special_5');
   }
 
+  // 저장된 진행 상황 복원 (Supabase player_saves 행) — skillState.loadState()를 먼저 호출한 뒤 사용
+  loadProgress(save, skillState) {
+    this.level = save.level ?? 1;
+    this.xp = save.xp ?? 0;
+    this.xpToNext = save.xp_to_next ?? 50;
+    this.baseMaxHp = save.base_max_hp ?? BASE_MAX_HP;
+    this.recalcStats(skillState);
+    this.hp = this.maxHp;
+  }
+
   gainXp(amount, skillState) {
     this.xp += amount;
     while (this.xp >= this.xpToNext) {
@@ -122,7 +132,7 @@ export class Player {
     }
   }
 
-  update(dt, input, skillState, worldRadius, gateLocked) {
+  update(dt, input, skillState, worldRadius, outerGateLocked, innerGateLocked) {
     if (this.isDead) return;
 
     // 쿨다운 타이머 갱신
@@ -158,13 +168,23 @@ export class Player {
       this.group.position.z *= scale;
     }
 
-    // 봉인의 결계: 앞의 두 보스를 처치하기 전까지 최종 보스 아레나 진입 차단
-    if (gateLocked) {
+    // 레벨 결계: 요구 레벨 미달 시 콜로세움 입장 차단
+    if (outerGateLocked) {
       const gx = this.group.position.x - FINAL_BOSS_POS.x;
       const gz = this.group.position.z - FINAL_BOSS_POS.z;
       const gDist = Math.hypot(gx, gz);
-      if (gDist < GATE_RADIUS) {
-        const scale = GATE_RADIUS / (gDist || 0.001);
+      if (gDist < OUTER_GATE_RADIUS) {
+        const scale = OUTER_GATE_RADIUS / (gDist || 0.001);
+        this.group.position.x = FINAL_BOSS_POS.x + gx * scale;
+        this.group.position.z = FINAL_BOSS_POS.z + gz * scale;
+      }
+    } else if (innerGateLocked) {
+      // 봉인 결계: 콜로세움 몬스터를 모두 처치하기 전까지 성 진입 차단
+      const gx = this.group.position.x - FINAL_BOSS_POS.x;
+      const gz = this.group.position.z - FINAL_BOSS_POS.z;
+      const gDist = Math.hypot(gx, gz);
+      if (gDist < INNER_GATE_RADIUS) {
+        const scale = INNER_GATE_RADIUS / (gDist || 0.001);
         this.group.position.x = FINAL_BOSS_POS.x + gx * scale;
         this.group.position.z = FINAL_BOSS_POS.z + gz * scale;
       }

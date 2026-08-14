@@ -9,18 +9,21 @@ export const PALETTE = {
 };
 
 const CORRUPT_CENTER = { x: -45, z: -45 };
-const CORRUPT_RADIUS = 24;
+const CORRUPT_RADIUS = 38; // 콜로세움으로 이어지는 진입로까지 포함하도록 확장된 타락 지대
 export const WORLD_RADIUS = 100;
 
-// 폐성이자 최종 보스 아레나 위치 — 타락 지대 중심에서 바깥으로 뻗어나가는 방향.
-// 성 몸체는 공중에 떠 있지만, 아레나(성 안뜰)는 지상에서 실제로 도달 가능한 최종 목적지.
+// 콜로세움(최종 결전지) 위치 — 타락 지대 중심에서 바깥으로 뻗어나가는 방향. 성은 콜로세움 중심, 지상에 그대로 서 있음.
 const CASTLE_ANGLE = Math.atan2(CORRUPT_CENTER.z, CORRUPT_CENTER.x);
-export const CASTLE_DIST = 80; // 월드 경계(100) 안쪽
+export const CASTLE_DIST = 80; // 월드 경계(100) 안쪽 — 콜로세움/성의 중심
 export const FINAL_BOSS_POS = {
   x: Math.cos(CASTLE_ANGLE) * CASTLE_DIST,
   z: Math.sin(CASTLE_ANGLE) * CASTLE_DIST,
 };
-export const GATE_RADIUS = 16; // 룬 수호자·포자 여왕을 처치하기 전까지 이 반경 안으로 들어갈 수 없음
+export const COLOSSEUM_ENTRANCE_ANGLE = CASTLE_ANGLE + Math.PI; // 입구는 원점(플레이어 진입 방향)을 향함
+export const COLOSSEUM_RADIUS = 40; // 콜로세움 외벽 반경
+export const REQUIRED_LEVEL = 10; // 콜로세움 입장에 필요한 최소 레벨
+export const OUTER_GATE_RADIUS = 37; // 레벨 결계 — 콜로세움 입구를 막는 반경
+export const INNER_GATE_RADIUS = 18; // 봉인 결계 — 콜로세움 몬스터를 모두 처치해야 여는 성 진입 반경
 
 export function createWorld() {
   const scene = new THREE.Scene();
@@ -78,9 +81,7 @@ export function createWorld() {
     { x: -6, z: -20, r: 4 },
     { x: 24, z: -6, r: 4 },
     { x: 8, z: 22, r: 4 },
-    { x: -45, z: -58, r: 6 }, // 보스1(룬 수호자) 스폰 지점
-    { x: -58, z: -34, r: 6 }, // 보스2(포자 여왕) 스폰 지점
-    { x: FINAL_BOSS_POS.x, z: FINAL_BOSS_POS.z, r: 18 }, // 최종 보스 아레나 + 결계
+    { x: FINAL_BOSS_POS.x, z: FINAL_BOSS_POS.z, r: COLOSSEUM_RADIUS + 3 }, // 콜로세움 전체
   ];
   const isCorrupted = (x, z) => Math.hypot(x - CORRUPT_CENTER.x, z - CORRUPT_CENTER.z) < CORRUPT_RADIUS;
   const isClear = (x, z, extra = 0) => avoid.every((a) => Math.hypot(x - a.x, z - a.z) > a.r + extra);
@@ -150,45 +151,68 @@ export function createWorld() {
     crystals.push(crystal);
   }
 
-  // --- 최종 보스 아레나: 폐성 바로 앞, 룬 폭주의 근원과 가장 가까운 결전의 장 ---
-  const arenaFloorMat = new THREE.MeshStandardMaterial({ color: 0x241a2c, flatShading: true });
-  const arenaFloor = new THREE.Mesh(new THREE.CircleGeometry(13, 32), arenaFloorMat);
-  arenaFloor.rotation.x = -Math.PI / 2;
-  arenaFloor.position.set(FINAL_BOSS_POS.x, 0.02, FINAL_BOSS_POS.z);
-  arenaFloor.receiveShadow = true;
-  scene.add(arenaFloor);
+  // --- 콜로세움: 레벨 결계로 막힌 입구, 내부에 콜로세움 몬스터, 중앙에 지상 성채 ---
+  const colosseum = createColosseum(COLOSSEUM_RADIUS, COLOSSEUM_ENTRANCE_ANGLE);
+  colosseum.position.set(FINAL_BOSS_POS.x, 0, FINAL_BOSS_POS.z);
+  scene.add(colosseum);
+  const braziers = colosseum.userData.braziers;
 
-  const ARENA_SPIKE_COUNT = 9;
-  for (let i = 0; i < ARENA_SPIKE_COUNT; i++) {
-    const angle = (i / ARENA_SPIKE_COUNT) * Math.PI * 2;
+  const colosseumFloorMat = new THREE.MeshStandardMaterial({ color: 0x241a2c, flatShading: true });
+  const colosseumFloor = new THREE.Mesh(new THREE.CircleGeometry(COLOSSEUM_RADIUS - 2, 40), colosseumFloorMat);
+  colosseumFloor.rotation.x = -Math.PI / 2;
+  colosseumFloor.position.set(FINAL_BOSS_POS.x, 0.02, FINAL_BOSS_POS.z);
+  colosseumFloor.receiveShadow = true;
+  scene.add(colosseumFloor);
+
+  const COLOSSEUM_SPIKE_COUNT = 20;
+  for (let i = 0; i < COLOSSEUM_SPIKE_COUNT; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = INNER_GATE_RADIUS + 3 + Math.random() * (COLOSSEUM_RADIUS - INNER_GATE_RADIUS - 8);
     const spike = createCorruptCrystal();
-    spike.scale.setScalar(2.1);
-    spike.position.set(
-      FINAL_BOSS_POS.x + Math.cos(angle) * 12.2,
-      0,
-      FINAL_BOSS_POS.z + Math.sin(angle) * 12.2
-    );
+    spike.scale.setScalar(1.4 + Math.random() * 1.1);
+    spike.position.set(FINAL_BOSS_POS.x + Math.cos(angle) * r, 0, FINAL_BOSS_POS.z + Math.sin(angle) * r);
     scene.add(spike);
     crystals.push(spike); // 정화 시퀀스에서 함께 사그라들도록 기존 결정체 배열에 편입
   }
 
-  const arenaLight = new THREE.PointLight(0xb85fe0, 1.6, 30);
-  arenaLight.position.set(FINAL_BOSS_POS.x, 4, FINAL_BOSS_POS.z);
+  const arenaLight = new THREE.PointLight(0xb85fe0, 1.8, 45);
+  arenaLight.position.set(FINAL_BOSS_POS.x, 6, FINAL_BOSS_POS.z);
   scene.add(arenaLight);
 
-  // --- 봉인의 결계: 룬 수호자·포자 여왕을 처치하기 전까지 아레나 진입을 막는 장벽 ---
-  const gateMat = new THREE.MeshBasicMaterial({
+  // --- 레벨 결계: 요구 레벨 미달 시 콜로세움 입구를 막는 장벽 ---
+  const outerGateMat = new THREE.MeshBasicMaterial({
+    color: 0xffd166, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const outerGateBarrier = new THREE.Mesh(
+    new THREE.CylinderGeometry(OUTER_GATE_RADIUS, OUTER_GATE_RADIUS, 9, 40, 1, true),
+    outerGateMat
+  );
+  outerGateBarrier.position.set(FINAL_BOSS_POS.x, 4.5, FINAL_BOSS_POS.z);
+  scene.add(outerGateBarrier);
+  const OUTER_GATE_BASE_OPACITY = outerGateMat.opacity;
+  let outerGateLocked = true;
+  let outerGateOpacity = OUTER_GATE_BASE_OPACITY;
+
+  function setOuterGateLocked(locked) {
+    outerGateLocked = locked;
+  }
+
+  // --- 봉인 결계: 콜로세움 몬스터를 모두 처치하기 전까지 성 진입을 막는 장벽 ---
+  const innerGateMat = new THREE.MeshBasicMaterial({
     color: 0xff4fd0, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false,
   });
-  const gateBarrier = new THREE.Mesh(new THREE.CylinderGeometry(GATE_RADIUS, GATE_RADIUS, 7, 32, 1, true), gateMat);
-  gateBarrier.position.set(FINAL_BOSS_POS.x, 3.5, FINAL_BOSS_POS.z);
-  scene.add(gateBarrier);
-  const GATE_BASE_OPACITY = gateMat.opacity;
-  let gateLocked = true;
-  let gateOpacity = GATE_BASE_OPACITY;
+  const innerGateBarrier = new THREE.Mesh(
+    new THREE.CylinderGeometry(INNER_GATE_RADIUS, INNER_GATE_RADIUS, 7, 32, 1, true),
+    innerGateMat
+  );
+  innerGateBarrier.position.set(FINAL_BOSS_POS.x, 3.5, FINAL_BOSS_POS.z);
+  scene.add(innerGateBarrier);
+  const INNER_GATE_BASE_OPACITY = innerGateMat.opacity;
+  let innerGateLocked = true;
+  let innerGateOpacity = INNER_GATE_BASE_OPACITY;
 
-  function setGateLocked(locked) {
-    gateLocked = locked;
+  function setInnerGateLocked(locked) {
+    innerGateLocked = locked;
   }
 
   // --- 연못 (평화 지역 랜드마크) ---
@@ -203,9 +227,9 @@ export function createWorld() {
   const runeCore = runeCircle.userData.core;
   const runeCoreMat = runeCore.material;
 
-  // --- 폐성: 몸체(성벽·탑·첨탑)는 룬의 힘으로 공중에 떠 있고, 성 안뜰(최종 보스 아레나)은 지상에서 도달 가능 ---
+  // --- 성: 콜로세움 한가운데, 지상에 그대로 서 있는 최종 보스의 거처 ---
   const castle = createCastle();
-  castle.name = 'floatingCastle';
+  castle.name = 'castle';
   castle.position.set(FINAL_BOSS_POS.x, 0, FINAL_BOSS_POS.z);
   scene.add(castle);
   const castleBeamMat = castle.userData.beamMat;
@@ -263,6 +287,24 @@ export function createWorld() {
       startEmissive: mote.material.emissive.clone(),
     });
   }
+
+  // --- 타락 지대~콜로세움 상공의 먹구름 천장 + 지면 안개 (다크소울풍 음산한 분위기) ---
+  const ATMOSPHERE_RADIUS = 75;
+  const stormCeilingMat = new THREE.MeshBasicMaterial({
+    color: 0x241f30, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const stormCeiling = new THREE.Mesh(new THREE.CircleGeometry(ATMOSPHERE_RADIUS, 40), stormCeilingMat);
+  stormCeiling.rotation.x = Math.PI / 2;
+  stormCeiling.position.set(CORRUPT_CENTER.x, 55, CORRUPT_CENTER.z);
+  scene.add(stormCeiling);
+
+  const groundFogMat = new THREE.MeshBasicMaterial({
+    color: 0x3a2f4a, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const groundFog = new THREE.Mesh(new THREE.CircleGeometry(ATMOSPHERE_RADIUS, 40), groundFogMat);
+  groundFog.rotation.x = -Math.PI / 2;
+  groundFog.position.set(CORRUPT_CENTER.x, 1.3, CORRUPT_CENTER.z);
+  scene.add(groundFog);
 
   // --- 정화(승리) 시퀀스: 보스를 모두 처치하면 타락 지대의 핵심 오염이 서서히 걷힘 ---
   let purifying = false;
@@ -340,14 +382,30 @@ export function createWorld() {
       m.mesh.position.x += Math.sin(elapsed * 0.5 + m.phase) * 0.01;
     }
 
-    const gateTarget = gateLocked ? GATE_BASE_OPACITY : 0;
-    gateOpacity += (gateTarget - gateOpacity) * Math.min(1, dt * 3);
-    gateMat.opacity = gateOpacity * (gateLocked ? 0.75 + Math.sin(elapsed * 3) * 0.25 : 1);
-    gateBarrier.visible = gateOpacity > 0.01;
-    gateBarrier.rotation.y += dt * 0.15;
+    const outerTarget = outerGateLocked ? OUTER_GATE_BASE_OPACITY : 0;
+    outerGateOpacity += (outerTarget - outerGateOpacity) * Math.min(1, dt * 3);
+    outerGateMat.opacity = outerGateOpacity * (outerGateLocked ? 0.75 + Math.sin(elapsed * 2.2) * 0.25 : 1);
+    outerGateBarrier.visible = outerGateOpacity > 0.01;
+    outerGateBarrier.rotation.y += dt * 0.1;
+
+    const innerTarget = innerGateLocked ? INNER_GATE_BASE_OPACITY : 0;
+    innerGateOpacity += (innerTarget - innerGateOpacity) * Math.min(1, dt * 3);
+    innerGateMat.opacity = innerGateOpacity * (innerGateLocked ? 0.75 + Math.sin(elapsed * 3) * 0.25 : 1);
+    innerGateBarrier.visible = innerGateOpacity > 0.01;
+    innerGateBarrier.rotation.y += dt * 0.15;
+
+    for (const b of braziers) {
+      const flicker = 1.4 + Math.sin(elapsed * 9 + b.mesh.position.x) * 0.5 + Math.sin(elapsed * 23) * 0.2;
+      b.mat.emissiveIntensity = flicker;
+      b.light.intensity = flicker;
+    }
+
+    stormCeiling.rotation.z += dt * 0.01;
+    groundFog.rotation.z -= dt * 0.006;
+    groundFog.position.x = CORRUPT_CENTER.x + Math.sin(elapsed * 0.1) * 2;
   }
 
-  return { scene, update, purify, setGateLocked };
+  return { scene, update, purify, setOuterGateLocked, setInnerGateLocked };
 }
 
 function scatterPoint(minR, maxR) {
@@ -590,34 +648,14 @@ function createCastle() {
   const stone = new THREE.MeshStandardMaterial({ color: 0x2b2530, flatShading: true });
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x120f18, flatShading: true });
 
-  // 지상에서 솟은 바위 첨탑 — 성채 몸체는 이 위로 룬의 힘에 의해 공중에 떠 있음
-  const cliffSpecs = [
-    [0, 0, 13, 34],
-    [-9, 6, 9, 24],
-    [8, -5, 10, 27],
-    [-4, -10, 8, 20],
-    [10, 8, 7, 18],
-  ];
-  for (const [x, z, r, h] of cliffSpecs) {
-    const cliff = new THREE.Mesh(new THREE.ConeGeometry(r, h, 5), darkStone);
-    cliff.position.set(x, h / 2 - 6, z);
-    cliff.rotation.y = Math.random() * Math.PI;
-    group.add(cliff);
-  }
+  const baseY = 0; // 콜로세움 바닥에 그대로 서 있는 성 — 공중부양 없음
 
-  const baseY = 38; // 바위 첨탑(꼭대기 약 28) 위로 뜬 성채 몸체 — 그 사이가 부유하는 빈틈
-
-  // 바위산과 성채 사이의 빈틈을 떠도는 룬 파편 — 공중부양을 지탱하는 힘을 암시
-  const shardMat = new THREE.MeshStandardMaterial({
-    color: 0x6a2fa0, emissive: 0x9b3fe0, emissiveIntensity: 1, flatShading: true,
-  });
-  for (let i = 0; i < 6; i++) {
-    const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.5 + Math.random() * 0.5, 0), shardMat);
-    const a = Math.random() * Math.PI * 2;
-    const r = 4 + Math.random() * 9;
-    shard.position.set(Math.cos(a) * r, 29 + Math.random() * 7, Math.sin(a) * r);
-    group.add(shard);
-  }
+  // 성벽 기단 (지면에 밀착)
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(16, 18, 2, 10), darkStone);
+  plinth.position.set(0, 1, 0);
+  plinth.receiveShadow = true;
+  plinth.castShadow = true;
+  group.add(plinth);
 
   // 성벽 링 (군데군데 무너진 흉벽)
   const wallRadius = 15;
@@ -720,6 +758,99 @@ function createCastle() {
   group.userData.beamMat = beamMat;
   group.userData.orbMat = orbMat;
   group.userData.crows = crows;
+  return group;
+}
+
+// 콜로세움: 외곽 성벽 링(입구 개방) + 무너진 관중석 + 입구를 지키는 화톳불 기둥 (다크소울풍)
+function createColosseum(radius, entranceAngle) {
+  const group = new THREE.Group();
+  const stone = new THREE.MeshStandardMaterial({ color: 0x2b2530, flatShading: true });
+  const darkStone = new THREE.MeshStandardMaterial({ color: 0x1c1822, flatShading: true });
+
+  const angleDiffFrom = (angle, target) => {
+    let diff = Math.abs(angle - target) % (Math.PI * 2);
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    return diff;
+  };
+
+  // 외벽 (군데군데 무너지고, 입구 쪽은 크게 개방)
+  const wallHeight = 11;
+  const segments = 22;
+  for (let i = 0; i < segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    const nextAngle = ((i + 1) / segments) * Math.PI * 2;
+    const midAngle = (angle + nextAngle) / 2;
+    if (angleDiffFrom(midAngle, entranceAngle) < 0.26) continue; // 입구
+    const broken = Math.random() < 0.22;
+    const h = broken ? wallHeight * (0.35 + Math.random() * 0.3) : wallHeight;
+    const segLen = 2 * radius * Math.sin(Math.PI / segments) * 1.06;
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(segLen, h, 2.2), broken ? darkStone : stone);
+    wall.position.set(Math.cos(midAngle) * radius, h / 2, Math.sin(midAngle) * radius);
+    wall.rotation.y = -midAngle + Math.PI / 2;
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    group.add(wall);
+    if (!broken) {
+      for (let c = -1; c <= 1; c += 2) {
+        const cren = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.6, 2.4), stone);
+        cren.position.set(
+          wall.position.x + Math.cos(midAngle + Math.PI / 2) * segLen * 0.3 * c,
+          wallHeight + 0.8,
+          wall.position.z + Math.sin(midAngle + Math.PI / 2) * segLen * 0.3 * c
+        );
+        group.add(cren);
+      }
+    }
+  }
+
+  // 안쪽 계단식 관중석 (낮고 무너진 잔해 블록)
+  const tierRadius = radius - 6;
+  const tierCount = 16;
+  for (let i = 0; i < tierCount; i++) {
+    if (Math.random() < 0.3) continue;
+    const angle = (i / tierCount) * Math.PI * 2;
+    if (angleDiffFrom(angle, entranceAngle) < 0.3) continue;
+    const h = 2 + Math.random() * 2.4;
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(5, h, 3), darkStone);
+    seat.position.set(Math.cos(angle) * tierRadius, h / 2, Math.sin(angle) * tierRadius);
+    seat.rotation.y = -angle;
+    seat.castShadow = true;
+    seat.receiveShadow = true;
+    group.add(seat);
+  }
+
+  // 입구 기둥 + 화톳불(브라지어) + 깃발
+  const bannerMat = new THREE.MeshStandardMaterial({ color: 0x5a1f2a, flatShading: true, side: THREE.DoubleSide });
+  const flameMat = new THREE.MeshStandardMaterial({ color: 0xff6a2c, emissive: 0xff8a3c, emissiveIntensity: 1.8 });
+  const braziers = [];
+  for (const side of [-1, 1]) {
+    const perpAngle = entranceAngle + Math.PI / 2;
+    const px = Math.cos(entranceAngle) * radius + Math.cos(perpAngle) * side * 4.5;
+    const pz = Math.sin(entranceAngle) * radius + Math.sin(perpAngle) * side * 4.5;
+    const pillarH = wallHeight + 4;
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.4, pillarH, 8), darkStone);
+    pillar.position.set(px, pillarH / 2, pz);
+    pillar.castShadow = true;
+    group.add(pillar);
+
+    const banner = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 4.5), bannerMat);
+    banner.position.set(px, wallHeight - 1, pz - side * 0.1);
+    banner.rotation.y = -entranceAngle;
+    group.add(banner);
+
+    const brazierBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.35, 0.5, 6), darkStone);
+    brazierBowl.position.set(px, pillarH + 0.2, pz);
+    group.add(brazierBowl);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.9, 5), flameMat);
+    flame.position.set(px, pillarH + 0.7, pz);
+    group.add(flame);
+    const flameLight = new THREE.PointLight(0xff8a3c, 1.6, 16);
+    flameLight.position.set(px, pillarH + 0.7, pz);
+    group.add(flameLight);
+    braziers.push({ mesh: flame, mat: flameMat, light: flameLight });
+  }
+
+  group.userData.braziers = braziers;
   return group;
 }
 

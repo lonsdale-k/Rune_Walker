@@ -86,4 +86,10 @@ export class SkillTreeState {
   addSkillPoint() {
     this.skillPoints += 1;
   }
+
+  // 저장된 진행 상황 복원 (Supabase player_saves 행)
+  loadState(save) {
+    this.allocated = new Set(save.allocated_skills ?? []);
+    this.skillPoints = save.skill_points ?? 2;
+  }
 }

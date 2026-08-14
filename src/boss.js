@@ -47,6 +47,7 @@ export class Boss {
     this.phase2 = false;
 
     this.isDead = false;
+    this.sealed = false; // 콜로세움 몬스터가 레벨 결계 뒤에서 잠들어 있을 때 true
     this.deathTimer = 0;
     this.hitFlashTimer = 0;
     this.burn = null;
@@ -55,7 +56,7 @@ export class Boss {
   }
 
   takeDamage(amount) {
-    if (this.isDead) return;
+    if (this.isDead || this.sealed) return;
     this.hp -= amount;
     this.hitFlashTimer = 0.15;
     if (!this.phase2 && this.hp <= this.maxHp * PHASE2_HP_PCT) {
@@ -70,18 +71,19 @@ export class Boss {
   }
 
   applyBurn(dps, duration) {
-    if (this.isDead) return;
+    if (this.isDead || this.sealed) return;
     if (!this.burn || this.burn.timer < duration) this.burn = { dps, timer: duration };
   }
 
   applySlow(mult, duration) {
     // 보스는 군중제어에 절반만 반응 (완전 면역 대신 보스로서의 위압감은 유지)
-    if (this.isDead) return;
+    if (this.isDead || this.sealed) return;
     const bossMult = Math.min(1, mult + 0.35);
     if (!this.slow || this.slow.timer < duration) this.slow = { mult: bossMult, timer: duration };
   }
 
   update(dt, playerGroup, onAttackPlayer) {
+    if (this.sealed) return;
     if (this.isDead) {
       this.deathTimer -= dt;
       const t = Math.max(0, Math.min(1, this.deathTimer / DEATH_FADE_TIME));
@@ -349,6 +351,7 @@ export class SporeQueen {
     this.projectiles = [];
 
     this.isDead = false;
+    this.sealed = false; // 콜로세움 몬스터가 레벨 결계 뒤에서 잠들어 있을 때 true
     this.deathTimer = 0;
     this.hitFlashTimer = 0;
     this.burn = null;
@@ -357,7 +360,7 @@ export class SporeQueen {
   }
 
   takeDamage(amount) {
-    if (this.isDead) return;
+    if (this.isDead || this.sealed) return;
     this.hp -= amount;
     this.hitFlashTimer = 0.15;
     if (!this.phase2 && this.hp <= this.maxHp * SQ_PHASE2_HP_PCT) {
@@ -374,12 +377,12 @@ export class SporeQueen {
   }
 
   applyBurn(dps, duration) {
-    if (this.isDead) return;
+    if (this.isDead || this.sealed) return;
     if (!this.burn || this.burn.timer < duration) this.burn = { dps, timer: duration };
   }
 
   applySlow(mult, duration) {
-    if (this.isDead) return;
+    if (this.isDead || this.sealed) return;
     const bossMult = Math.min(1, mult + 0.35);
     if (!this.slow || this.slow.timer < duration) this.slow = { mult: bossMult, timer: duration };
   }
@@ -390,6 +393,7 @@ export class SporeQueen {
   }
 
   update(dt, playerGroup, onAttackPlayer) {
+    if (this.sealed) return;
     if (this.isDead) {
       this.deathTimer -= dt;
       const t = Math.max(0, Math.min(1, this.deathTimer / SQ_DEATH_FADE_TIME));
@@ -613,55 +617,56 @@ function buildSporeQueenMesh() {
   return group;
 }
 
-// --- 최종 보스: 타락한 룬 군주 ---
-// 폐성 바로 앞, 룬 폭주의 근원에 가장 가까운 곳을 지키는 최종 결전 상대.
-// 근접(슬램·돌진)과 원거리(룬 파열 연사)를 함께 쓰며, 체력이 낮아질수록(격노) 공격 속도가 오르고
-// 광역 붕괴(룬 붕괴)까지 추가되어 공격/방어/기동 빌드를 모두 동시에 시험한다. 처치 시 승리.
-const RL_AGGRO_RANGE = 26;
-const RL_LEASH_RANGE = 30;
-const RL_SLAM_RANGE = 5.5;
-const RL_SLAM_DAMAGE = 26;
-const RL_SLAM_WINDUP = 0.85;
-const RL_SLAM_RECOVER = 0.65;
-const RL_CHARGE_MIN_RANGE = 7;
-const RL_CHARGE_MAX_RANGE = 18;
-const RL_CHARGE_WINDUP = 0.75;
-const RL_CHARGE_DURATION = 0.6;
-const RL_CHARGE_SPEED = 15;
-const RL_CHARGE_DAMAGE = 30;
-const RL_CHARGE_RECOVER = 0.75;
-const RL_CHARGE_COOLDOWN = 5;
-const RL_CHARGE_COOLDOWN_ENRAGE = 3.2;
-const RL_BURST_RANGE = 22;
-const RL_BURST_WINDUP = 0.9;
-const RL_BURST_COOLDOWN = 7;
-const RL_BURST_COOLDOWN_ENRAGE = 4.5;
-const RL_BURST_COUNT = 12;
-const RL_BURST_SPEED = 9;
-const RL_BURST_DAMAGE = 12;
-const RL_BURST_HIT_RADIUS = 0.9;
-const RL_BURST_LIFETIME = 4;
-const RL_PHASE2_HP_PCT = 0.65; // 원거리 룬 파열 해금
-const RL_PHASE3_HP_PCT = 0.32; // 격노: 공격 속도 증가 + 룬 붕괴 해금
-const RL_NOVA_COOLDOWN = 10;
-const RL_NOVA_TELEGRAPH = 1.5;
-const RL_NOVA_RADIUS = 7.5;
-const RL_NOVA_DAMAGE = 32;
-const RL_DEATH_FADE_TIME = 1.8;
+// --- 최종 보스: 타락한 대곰 ---
+// 콜로세움 중앙 성채를 지키는 거대한 타락 짐승. 다른 두 보스(룬 수호자·포자 여왕)의 기술을 흡수해
+// 근접 슬램·돌진(룬 수호자 계열)과 원거리 포자 파열 연사(포자 여왕 계열)를 함께 쓰고,
+// 체력이 낮아질수록(격노) 공격 속도가 오르며 자신만의 광역 포효(타락 포효)까지 추가되어
+// 공격/방어/기동 빌드를 모두 동시에 시험한다. 처치 시 승리.
+const CB_AGGRO_RANGE = 26;
+const CB_LEASH_RANGE = 30;
+const CB_SLAM_RANGE = 5.5;
+const CB_SLAM_DAMAGE = 26;
+const CB_SLAM_WINDUP = 0.85;
+const CB_SLAM_RECOVER = 0.65;
+const CB_CHARGE_MIN_RANGE = 7;
+const CB_CHARGE_MAX_RANGE = 18;
+const CB_CHARGE_WINDUP = 0.75;
+const CB_CHARGE_DURATION = 0.6;
+const CB_CHARGE_SPEED = 15;
+const CB_CHARGE_DAMAGE = 30;
+const CB_CHARGE_RECOVER = 0.75;
+const CB_CHARGE_COOLDOWN = 5;
+const CB_CHARGE_COOLDOWN_ENRAGE = 3.2;
+const CB_BURST_RANGE = 22;
+const CB_BURST_WINDUP = 0.9;
+const CB_BURST_COOLDOWN = 7;
+const CB_BURST_COOLDOWN_ENRAGE = 4.5;
+const CB_BURST_COUNT = 12;
+const CB_BURST_SPEED = 9;
+const CB_BURST_DAMAGE = 12;
+const CB_BURST_HIT_RADIUS = 0.9;
+const CB_BURST_LIFETIME = 4;
+const CB_PHASE2_HP_PCT = 0.65; // 원거리 포자 파열 포효 해금
+const CB_PHASE3_HP_PCT = 0.32; // 격노: 공격 속도 증가 + 타락 포효(광역 붕괴) 해금
+const CB_NOVA_COOLDOWN = 10;
+const CB_NOVA_TELEGRAPH = 1.5;
+const CB_NOVA_RADIUS = 7.5;
+const CB_NOVA_DAMAGE = 32;
+const CB_DEATH_FADE_TIME = 1.8;
 
-export class RuneLord {
+export class CorruptedBear {
   constructor(scene, spawnPos, opts = {}) {
-    this.name = opts.name ?? '타락한 룬 군주';
+    this.name = opts.name ?? '타락한 대곰';
     this.scene = scene;
-    this.group = buildRuneLordMesh();
+    this.group = buildCorruptedBearMesh();
     this.group.position.copy(spawnPos);
     scene.add(this.group);
 
-    this.telegraphRing = buildRing(RL_SLAM_RANGE, 0xff3300, 0.35);
+    this.telegraphRing = buildRing(CB_SLAM_RANGE, 0xff3300, 0.35);
     this.telegraphRing.visible = false;
     scene.add(this.telegraphRing);
 
-    this.novaRing = buildRing(RL_NOVA_RADIUS, 0xff6fe0, 0.32);
+    this.novaRing = buildRing(CB_NOVA_RADIUS, 0xff6fe0, 0.32);
     this.novaRing.visible = false;
     scene.add(this.novaRing);
 
@@ -694,22 +699,22 @@ export class RuneLord {
     this.slow = null;
     this.xpGranted = false;
 
-    this.sealed = true; // 앞의 두 보스가 처치되기 전까지 결계 뒤에서 잠들어 있음
+    this.sealed = true; // 콜로세움 몬스터가 모두 처치되기 전까지 성 안에서 잠들어 있음
   }
 
   takeDamage(amount) {
     if (this.isDead || this.sealed) return;
     this.hp -= amount;
     this.hitFlashTimer = 0.15;
-    if (!this.phase2 && this.hp <= this.maxHp * RL_PHASE2_HP_PCT) this.phase2 = true;
-    if (!this.phase3 && this.hp <= this.maxHp * RL_PHASE3_HP_PCT) this.phase3 = true;
+    if (!this.phase2 && this.hp <= this.maxHp * CB_PHASE2_HP_PCT) this.phase2 = true;
+    if (!this.phase3 && this.hp <= this.maxHp * CB_PHASE3_HP_PCT) this.phase3 = true;
     if (this.hp <= 0) this.die();
   }
 
   die() {
     this.hp = 0;
     this.isDead = true;
-    this.deathTimer = RL_DEATH_FADE_TIME;
+    this.deathTimer = CB_DEATH_FADE_TIME;
     this.telegraphRing.visible = false;
     this.novaRing.visible = false;
     this.clearProjectiles();
@@ -735,7 +740,7 @@ export class RuneLord {
     if (this.sealed) return;
     if (this.isDead) {
       this.deathTimer -= dt;
-      const t = Math.max(0, Math.min(1, this.deathTimer / RL_DEATH_FADE_TIME));
+      const t = Math.max(0, Math.min(1, this.deathTimer / CB_DEATH_FADE_TIME));
       this.group.scale.setScalar(t * 1.75);
       this.updateProjectiles(dt, playerGroup, onAttackPlayer);
       return;
@@ -786,18 +791,18 @@ export class RuneLord {
     const speedMul = (this.phase3 ? 1.35 : this.phase2 ? 1.15 : 1) * slowFactor;
 
     if (this.state === 'guard') {
-      if (distToPlayer < RL_AGGRO_RANGE) this.state = 'chase';
+      if (distToPlayer < CB_AGGRO_RANGE) this.state = 'chase';
     } else if (this.state === 'chase') {
-      if (distFromSpawn > RL_LEASH_RANGE && distToPlayer > RL_AGGRO_RANGE) {
+      if (distFromSpawn > CB_LEASH_RANGE && distToPlayer > CB_AGGRO_RANGE) {
         this.moveToward(this.spawnPos.x, this.spawnPos.z, dt, speedMul);
-      } else if (distToPlayer <= RL_SLAM_RANGE) {
+      } else if (distToPlayer <= CB_SLAM_RANGE) {
         this.beginSlam();
-      } else if (this.phase2 && this.burstCdTimer <= 0 && distToPlayer <= RL_BURST_RANGE) {
+      } else if (this.phase2 && this.burstCdTimer <= 0 && distToPlayer <= CB_BURST_RANGE) {
         this.beginBurst(px, pz);
       } else if (
         this.chargeCdTimer <= 0 &&
-        distToPlayer >= RL_CHARGE_MIN_RANGE &&
-        distToPlayer <= RL_CHARGE_MAX_RANGE
+        distToPlayer >= CB_CHARGE_MIN_RANGE &&
+        distToPlayer <= CB_CHARGE_MAX_RANGE
       ) {
         this.beginCharge(px, pz, dx, dz, distToPlayer);
       } else {
@@ -817,22 +822,22 @@ export class RuneLord {
       this.timer -= dt;
       if (this.timer <= 0) {
         this.state = 'charging';
-        this.timer = RL_CHARGE_DURATION;
+        this.timer = CB_CHARGE_DURATION;
         this._chargeHit = false;
       }
     } else if (this.state === 'charging') {
-      this.group.position.x += this.chargeDir.x * RL_CHARGE_SPEED * dt;
-      this.group.position.z += this.chargeDir.z * RL_CHARGE_SPEED * dt;
+      this.group.position.x += this.chargeDir.x * CB_CHARGE_SPEED * dt;
+      this.group.position.z += this.chargeDir.z * CB_CHARGE_SPEED * dt;
       this.group.rotation.y = Math.atan2(this.chargeDir.x, this.chargeDir.z);
       const hitDist = Math.hypot(px - this.group.position.x, pz - this.group.position.z);
       if (!this._chargeHit && hitDist < 1.9) {
-        onAttackPlayer(RL_CHARGE_DAMAGE);
+        onAttackPlayer(CB_CHARGE_DAMAGE);
         this._chargeHit = true;
       }
       this.timer -= dt;
       if (this.timer <= 0) {
         this.state = 'chargeRecover';
-        this.timer = RL_CHARGE_RECOVER;
+        this.timer = CB_CHARGE_RECOVER;
       }
     } else if (this.state === 'chargeRecover') {
       this.timer -= dt;
@@ -846,12 +851,12 @@ export class RuneLord {
       if (this.timer <= 0) this.state = 'chase';
     }
 
-    // 룬 붕괴(광역 노바): 격노(3페이즈) 진입 후 다른 상태와 무관하게 병행 진행 — 지속적인 재포지셔닝 압박
+    // 타락 포효(광역 노바): 격노(3페이즈) 진입 후 다른 상태와 무관하게 병행 진행 — 지속적인 재포지셔닝 압박
     if (this.phase3) {
       if (this.novaState === 'idle') {
         if (this.novaCdTimer <= 0 && this.state !== 'guard') {
           this.novaState = 'telegraph';
-          this.novaTimer = RL_NOVA_TELEGRAPH;
+          this.novaTimer = CB_NOVA_TELEGRAPH;
           this.novaRing.position.set(this.group.position.x, 0.06, this.group.position.z);
           this.novaRing.visible = true;
         }
@@ -860,9 +865,9 @@ export class RuneLord {
         if (this.novaTimer <= 0) {
           this.novaRing.visible = false;
           const hitDist = Math.hypot(px - this.novaRing.position.x, pz - this.novaRing.position.z);
-          if (hitDist <= RL_NOVA_RADIUS) onAttackPlayer(RL_NOVA_DAMAGE);
+          if (hitDist <= CB_NOVA_RADIUS) onAttackPlayer(CB_NOVA_DAMAGE);
           this.novaState = 'idle';
-          this.novaCdTimer = RL_NOVA_COOLDOWN;
+          this.novaCdTimer = CB_NOVA_COOLDOWN;
         }
       }
     }
@@ -872,50 +877,50 @@ export class RuneLord {
 
   beginSlam() {
     this.state = 'slamWindup';
-    this.timer = this.phase2 ? RL_SLAM_WINDUP * 0.75 : RL_SLAM_WINDUP;
+    this.timer = this.phase2 ? CB_SLAM_WINDUP * 0.75 : CB_SLAM_WINDUP;
     this.telegraphRing.visible = true;
     this.telegraphRing.scale.setScalar(1);
   }
 
   executeSlam(onAttackPlayer, distToPlayer) {
     this.telegraphRing.visible = false;
-    if (distToPlayer <= RL_SLAM_RANGE) onAttackPlayer(RL_SLAM_DAMAGE);
+    if (distToPlayer <= CB_SLAM_RANGE) onAttackPlayer(CB_SLAM_DAMAGE);
     this.state = 'slamRecover';
-    this.timer = this.phase2 ? RL_SLAM_RECOVER * 0.75 : RL_SLAM_RECOVER;
+    this.timer = this.phase2 ? CB_SLAM_RECOVER * 0.75 : CB_SLAM_RECOVER;
   }
 
   beginCharge(px, pz, dx, dz, dist) {
     this.state = 'chargeWindup';
-    this.timer = this.phase2 ? RL_CHARGE_WINDUP * 0.75 : RL_CHARGE_WINDUP;
+    this.timer = this.phase2 ? CB_CHARGE_WINDUP * 0.75 : CB_CHARGE_WINDUP;
     const len = Math.max(0.001, dist);
     this.chargeDir.x = dx / len;
     this.chargeDir.z = dz / len;
-    this.chargeCdTimer = this.phase3 ? RL_CHARGE_COOLDOWN_ENRAGE : RL_CHARGE_COOLDOWN;
+    this.chargeCdTimer = this.phase3 ? CB_CHARGE_COOLDOWN_ENRAGE : CB_CHARGE_COOLDOWN;
     this.faceToward(px, pz);
   }
 
   beginBurst(px, pz) {
     this.state = 'burstWindup';
-    this.timer = RL_BURST_WINDUP;
+    this.timer = CB_BURST_WINDUP;
     this.faceToward(px, pz);
   }
 
   executeBurst() {
-    for (let i = 0; i < RL_BURST_COUNT; i++) {
-      const angle = (i / RL_BURST_COUNT) * Math.PI * 2;
-      const mesh = buildRuneProjectileMesh();
+    for (let i = 0; i < CB_BURST_COUNT; i++) {
+      const angle = (i / CB_BURST_COUNT) * Math.PI * 2;
+      const mesh = buildCorruptionShardMesh();
       mesh.position.set(this.group.position.x, 1.8, this.group.position.z);
       this.scene.add(mesh);
       this.projectiles.push({
         mesh,
-        vx: Math.cos(angle) * RL_BURST_SPEED,
-        vz: Math.sin(angle) * RL_BURST_SPEED,
-        life: RL_BURST_LIFETIME,
+        vx: Math.cos(angle) * CB_BURST_SPEED,
+        vz: Math.sin(angle) * CB_BURST_SPEED,
+        life: CB_BURST_LIFETIME,
       });
     }
     this.state = 'burstRecover';
     this.timer = 0.5;
-    this.burstCdTimer = this.phase3 ? RL_BURST_COOLDOWN_ENRAGE : RL_BURST_COOLDOWN;
+    this.burstCdTimer = this.phase3 ? CB_BURST_COOLDOWN_ENRAGE : CB_BURST_COOLDOWN;
   }
 
   updateProjectiles(dt, playerGroup, onAttackPlayer) {
@@ -929,8 +934,8 @@ export class RuneLord {
       p.mesh.rotation.y += dt * 8;
       p.life -= dt;
       const dist = Math.hypot(px - p.mesh.position.x, pz - p.mesh.position.z);
-      if (dist <= RL_BURST_HIT_RADIUS) {
-        onAttackPlayer(RL_BURST_DAMAGE);
+      if (dist <= CB_BURST_HIT_RADIUS) {
+        onAttackPlayer(CB_BURST_DAMAGE);
         this.scene.remove(p.mesh);
         this.projectiles.splice(i, 1);
       } else if (p.life <= 0) {
@@ -961,75 +966,86 @@ export class RuneLord {
   }
 }
 
-function buildRuneLordMesh() {
+function buildCorruptedBearMesh() {
   const group = new THREE.Group();
 
+  // 웅크린 네발짐승 몸통 (전방 +Z를 바라봄 — 이동 로직의 forward 방향 관례와 일치)
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x241a30, flatShading: true });
-  const torso = new THREE.Mesh(new THREE.DodecahedronGeometry(1.9, 0), bodyMat);
-  torso.scale.set(1, 1.4, 0.9);
-  torso.position.y = 2.4;
+  const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(1.7, 0), bodyMat);
+  torso.scale.set(1.3, 1.15, 1.9);
+  torso.position.set(0, 1.9, -0.3);
   torso.castShadow = true;
   group.add(torso);
 
-  const limbMat = new THREE.MeshStandardMaterial({ color: 0x1c1424, flatShading: true });
-  for (const side of [-1, 1]) {
-    const shoulder = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 0), limbMat);
-    shoulder.position.set(side * 1.6, 3.0, 0);
-    shoulder.castShadow = true;
-    group.add(shoulder);
+  const hump = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 0), bodyMat);
+  hump.scale.set(1, 0.9, 1);
+  hump.position.set(0, 2.7, -1.3);
+  hump.castShadow = true;
+  group.add(hump);
 
-    const arm = new THREE.Mesh(new THREE.ConeGeometry(0.42, 2.4, 5), limbMat);
-    arm.position.set(side * 1.75, 1.4, 0);
-    arm.rotation.z = side * 0.18;
-    arm.castShadow = true;
-    group.add(arm);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x2a1f38, flatShading: true });
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85, 0), headMat);
+  head.scale.set(1, 0.9, 1.05);
+  head.position.set(0, 1.9, 1.9);
+  head.castShadow = true;
+  group.add(head);
+
+  const snout = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.0, 6), headMat);
+  snout.rotation.x = Math.PI / 2;
+  snout.position.set(0, 1.65, 2.65);
+  group.add(snout);
+
+  for (const side of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.5, 5), headMat);
+    ear.position.set(side * 0.5, 2.55, 1.7);
+    group.add(ear);
   }
 
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x180f20, flatShading: true });
-  for (const side of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.75, 1.9, 6), legMat);
-    leg.position.set(side * 0.7, 0.95, 0);
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x1c1424, flatShading: true });
+  const legSpecs = [[-0.9, -1.5], [0.9, -1.5], [-1.0, 1.4], [1.0, 1.4]];
+  for (const [lx, lz] of legSpecs) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.55, 1.9, 6), legMat);
+    leg.position.set(lx, 0.95, lz);
     leg.castShadow = true;
     group.add(leg);
   }
 
-  // 왕관형 룬 장식 — 다른 보스와 구분되는 최종 보스의 상징
-  const crownMat = new THREE.MeshStandardMaterial({
+  // 등을 따라 돋아난 타락 결정 돌기 — 다른 보스와 구분되는 최종 보스의 상징
+  const spikeMat = new THREE.MeshStandardMaterial({
     color: 0x5a2a70, emissive: 0xb85fe0, emissiveIntensity: 1, flatShading: true,
   });
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2;
-    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.7, 4), crownMat);
-    spike.position.set(Math.cos(angle) * 0.55, 4.05, Math.sin(angle) * 0.55);
-    spike.rotation.x = 0.25 * Math.cos(angle);
-    spike.rotation.z = 0.25 * Math.sin(angle);
+  const spikePositions = [[0, 3.0, -1.6], [0, 3.15, -0.7], [0, 3.05, 0.2], [0, 2.7, 1.0]];
+  for (const [sx, sy, sz] of spikePositions) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.75, 4), spikeMat);
+    spike.position.set(sx, sy, sz);
+    spike.rotation.x = -0.3;
     group.add(spike);
   }
 
   const coreMat = new THREE.MeshStandardMaterial({
     color: 0xb85fe0, emissive: 0x9b3fe0, emissiveIntensity: 1.3, flatShading: true,
   });
-  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), coreMat);
-  core.position.y = 2.45;
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), coreMat);
+  core.position.set(0, 1.7, 0.6);
   group.add(core);
 
   const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 1.4 });
   for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 8), eyeMat);
-    eye.position.set(side * 0.5, 3.75, 1.05);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), eyeMat);
+    eye.position.set(side * 0.42, 2.05, 2.35);
     group.add(eye);
   }
 
   const light = new THREE.PointLight(0xb85fe0, 1.6, 10);
-  light.position.y = 2.6;
+  light.position.set(0, 2.2, 0.6);
   group.add(light);
 
   group.userData.bodyMat = bodyMat;
-  group.scale.setScalar(1.75);
+  group.scale.setScalar(1.9);
   return group;
 }
 
-function buildRuneProjectileMesh() {
+function buildCorruptionShardMesh() {
   const mat = new THREE.MeshStandardMaterial({
     color: 0xb85fe0, emissive: 0xff6fe0, emissiveIntensity: 1.3, flatShading: true,
   });

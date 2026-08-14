@@ -5,7 +5,7 @@ const GAME_KEYS = new Set([
 ]);
 
 export class Input {
-  constructor() {
+  constructor(canvas) {
     this.keys = new Set();
     this.attackQueued = false;
     this.skillQueued = { KeyQ: false, KeyE: false, Space: false, KeyR: false };
@@ -24,10 +24,11 @@ export class Input {
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
     });
-    window.addEventListener('mousedown', (e) => {
+    // 캔버스에만 바인딩 — UI 패널/버튼 클릭이 공격으로 새어 들어가지 않도록
+    canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0) this.attackQueued = true;
     });
-    window.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   isDown(code) {

@@ -300,13 +300,30 @@ export class UI {
       text-shadow: 0 1px 3px rgba(0,0,0,0.8); background: rgba(25,0,25,0.45);
       padding: 8px 16px; border-radius: 8px; display: none; z-index: 12;
     `;
-    el.textContent = '봉인된 결계 — 룬 수호자와 포자 여왕을 먼저 처치해야 합니다';
     this.root.appendChild(el);
     this.gateHintEl = el;
   }
 
-  setGateHint(visible) {
-    this.gateHintEl.style.display = visible ? 'block' : 'none';
+  setGateHint(text) {
+    this.gateHintEl.style.display = text ? 'block' : 'none';
+    if (text) this.gateHintEl.textContent = text;
+  }
+
+  buildAccountBar(email, onLogout) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `
+      position: absolute; top: 20px; right: 20px; display: flex; align-items: center; gap: 10px;
+      font-size: 12px; color: #cfd8dc; text-shadow: 0 1px 3px rgba(0,0,0,0.8); z-index: 5;
+    `;
+    wrap.innerHTML = `
+      <span>${email}</span>
+      <button id="logoutBtn" style="
+        background: rgba(20,20,30,0.6); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;
+        color: #fff; font-size: 12px; padding: 5px 10px; cursor: pointer;
+      ">로그아웃</button>
+    `;
+    this.root.appendChild(wrap);
+    wrap.querySelector('#logoutBtn').addEventListener('click', onLogout);
   }
 
   // 적 머리 위 체력바를 화면 좌표로 투영해 표시
