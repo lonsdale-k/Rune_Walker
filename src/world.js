@@ -236,6 +236,7 @@ export function createWorld() {
   const castleBeamMat = castle.userData.beamMat;
   const castleOrbMat = castle.userData.orbMat;
   const castleCrows = castle.userData.crows;
+  const castleOuterWallParts = castle.userData.outerWallParts;
   const castleOrbStartColor = castleOrbMat.color.clone();
   const castleOrbStartEmissive = castleOrbMat.emissive.clone();
   const castleOrbPeaceColor = new THREE.Color(0x7ad9ff);
@@ -377,6 +378,15 @@ export function createWorld() {
       }
       castleOrbMat.color.lerpColors(castleOrbStartColor, castleOrbPeaceColor, eased);
       castleOrbMat.emissive.lerpColors(castleOrbStartEmissive, castleOrbPeaceEmissive, eased);
+
+      // 바깥 성벽/탑은 완전히 무너져 사라짐 — 중앙 첨탑(보스 방)은 정화되어 그대로 남음
+      const wallScale = Math.max(0, 1 - eased);
+      for (const part of castleOuterWallParts) {
+        part.scale.setScalar(wallScale);
+      }
+      if (t >= 1) {
+        for (const part of castleOuterWallParts) part.visible = false;
+      }
     }
 
     const beamBasePulse = 0.25 + Math.sin(elapsed * 1.3) * 0.08;
@@ -803,6 +813,7 @@ function createCastle() {
   group.userData.beamMat = beamMat;
   group.userData.orbMat = orbMat;
   group.userData.crows = crows;
+  group.userData.outerWallParts = outerWallParts;
   return group;
 }
 

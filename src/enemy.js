@@ -10,25 +10,26 @@ const ATTACK_COOLDOWN = 1.3;
 const DEATH_FADE_TIME = 0.6;
 const RESPAWN_DELAY = 10;
 
-// 몬스터 종류별 기본 스탯/행동 파라미터
+// 몬스터 종류별 기본 스탯/행동 파라미터 — 시작 지역(hound/boar/vine/bat)은 초심자가 처음
+// 마주치는 몬스터라 데미지/어그로 범위를 낮춰 진입장벽을 완화함. 타락 지대 전용 golem은 그대로 둠.
 const KIND_PRESETS = {
   hound: {
-    maxHp: 45, moveSpeed: 3.4, damage: 8, xpReward: 20,
-    aggroRange: 10, attackRange: 1.7, attackCooldown: 1.3, hitRadius: 0.6,
+    maxHp: 45, moveSpeed: 3.4, damage: 6, xpReward: 20,
+    aggroRange: 9, attackRange: 1.7, attackCooldown: 1.3, hitRadius: 0.6,
   },
   boar: {
-    maxHp: 70, moveSpeed: 3.0, damage: 10, xpReward: 30,
-    aggroRange: 11, attackRange: 1.9, attackCooldown: 1.6, hitRadius: 0.9,
-    chargeDamage: 22, chargeSpeed: 11, chargeRange: 9,
+    maxHp: 70, moveSpeed: 3.0, damage: 8, xpReward: 30,
+    aggroRange: 9, attackRange: 1.9, attackCooldown: 1.6, hitRadius: 0.9,
+    chargeDamage: 16, chargeSpeed: 11, chargeRange: 9,
     chargeWindup: 0.6, chargeDuration: 0.4, chargeCooldown: 3.5,
   },
   vine: {
-    maxHp: 30, moveSpeed: 0, damage: 7, xpReward: 22, hitRadius: 0.7,
-    aggroRange: 13, shootRange: 11, projectileSpeed: 9, shootCooldown: 1.8,
+    maxHp: 30, moveSpeed: 0, damage: 5, xpReward: 22, hitRadius: 0.7,
+    aggroRange: 10, shootRange: 11, projectileSpeed: 9, shootCooldown: 2.2,
   },
   bat: {
-    maxHp: 22, moveSpeed: 5.2, damage: 5, xpReward: 16,
-    aggroRange: 12, attackRange: 1.4, attackCooldown: 0.9, hitRadius: 0.45,
+    maxHp: 22, moveSpeed: 5.2, damage: 4, xpReward: 16,
+    aggroRange: 9, attackRange: 1.4, attackCooldown: 1.1, hitRadius: 0.45,
   },
   golem: {
     maxHp: 130, moveSpeed: 2.1, damage: 14, xpReward: 45,

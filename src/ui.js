@@ -60,7 +60,7 @@ export class UI {
         border: 1px solid rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center;
         color:#fff; font-size:14px; font-weight:600; position:relative; overflow:hidden;
       `;
-      slot.innerHTML = `<span style="z-index:1;">${label}</span><div class="cd" style="position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,0.65); height:0%;"></div>`;
+      slot.innerHTML = `<span style="z-index:1;">${label}</span><div class="cd" style="position:absolute; left:0; right:0; bottom:0; background:rgba(255,255,255,0.55); height:0%;"></div>`;
       skillBar.appendChild(slot);
       this.skillSlotEls[code] = { root: slot, cd: slot.querySelector('.cd') };
     }
@@ -254,21 +254,23 @@ export class UI {
     const el = document.createElement('div');
     el.style.cssText = `
       position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-      color: #fff; font-size: 14px; text-align: center; pointer-events: none;
+      width: 420px; max-width: min(60vw, 420px); box-sizing: border-box;
+      color: #fff; font-size: 15px; font-weight: 600; text-align: center; pointer-events: none;
       text-shadow: 0 1px 3px rgba(0,0,0,0.8); transition: opacity 1s;
-      background: rgba(0,0,0,0.35); padding: 10px 18px; border-radius: 8px;
+      background: rgba(0,0,0,0.65); padding: 12px 18px; border-radius: 8px;
+      border: 1px solid rgba(255,209,102,0.6); box-shadow: 0 0 16px rgba(255,209,102,0.35);
     `;
     el.textContent = '룬워커 프로토타입 — Tab을 눌러 스킬을 배분해야 Q/E/Space/R 액티브를 사용할 수 있어요';
     this.root.appendChild(el);
     setTimeout(() => {
       el.style.opacity = '0';
-    }, 6000);
+    }, 10000);
   }
 
   _buildBossBar() {
     const wrap = document.createElement('div');
     wrap.style.cssText = `
-      position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
+      position: absolute; top: 104px; left: 50%; transform: translateX(-50%);
       width: 420px; max-width: 80vw; display: flex; flex-direction: column; gap: 10px;
       text-align: center; font-family: inherit; color: #fff;
       text-shadow: 0 1px 3px rgba(0,0,0,0.8); pointer-events: none;
@@ -328,7 +330,12 @@ export class UI {
 
   setGateHint(text) {
     this.gateHintEl.style.display = text ? 'block' : 'none';
-    if (text) this.gateHintEl.textContent = text;
+    if (!text) return;
+    this.gateHintEl.textContent = text;
+    // 보스 체력바가 떠 있으면 그 아래로, 없으면 기본 위치로 — 텍스트끼리 겹치지 않도록
+    const rootTop = this.root.getBoundingClientRect().top;
+    const bossRect = this.bossBarEl.getBoundingClientRect();
+    this.gateHintEl.style.top = bossRect.height > 0 ? `${bossRect.bottom - rootTop + 14}px` : '70px';
   }
 
   _buildTutorial() {
