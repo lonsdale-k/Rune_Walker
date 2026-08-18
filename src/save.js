@@ -12,7 +12,9 @@ export async function loadSave(userId) {
   return data;
 }
 
-export async function saveProgress(userId, { level, xp, xpToNext, baseMaxHp, skillPoints, allocatedSkills }) {
+export async function saveProgress(userId, {
+  level, xp, xpToNext, baseMaxHp, skillPoints, allocatedSkills, defeatedBosses, colosseumCleared,
+}) {
   const { error } = await supabase.from(TABLE).upsert({
     user_id: userId,
     level,
@@ -21,6 +23,8 @@ export async function saveProgress(userId, { level, xp, xpToNext, baseMaxHp, ski
     base_max_hp: baseMaxHp,
     skill_points: skillPoints,
     allocated_skills: allocatedSkills,
+    defeated_bosses: defeatedBosses,
+    colosseum_cleared: colosseumCleared,
     updated_at: new Date().toISOString(),
   });
   if (error) console.error('진행 상황 저장 실패:', error.message);

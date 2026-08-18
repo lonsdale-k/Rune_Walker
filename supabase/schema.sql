@@ -6,8 +6,14 @@ create table if not exists public.player_saves (
   base_max_hp numeric not null default 100,
   skill_points int not null default 2,
   allocated_skills jsonb not null default '[]'::jsonb,
+  defeated_bosses jsonb not null default '[]'::jsonb,
+  colosseum_cleared boolean not null default false,
   updated_at timestamptz not null default now()
 );
+
+-- 기존에 이미 만들어진 테이블에는 위 create table이 적용되지 않으므로 아래 alter문으로 컬럼을 추가한다
+alter table public.player_saves add column if not exists defeated_bosses jsonb not null default '[]'::jsonb;
+alter table public.player_saves add column if not exists colosseum_cleared boolean not null default false;
 
 alter table public.player_saves enable row level security;
 

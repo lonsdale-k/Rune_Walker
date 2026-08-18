@@ -1,5 +1,14 @@
 import { supabase } from './supabaseClient.js';
 
+// Supabase Auth는 이메일 형식만 받으므로, 아이디를 내부적으로 가짜 이메일 주소로 변환해 사용한다.
+// '@'가 포함된 입력은 (예전에 이메일로 가입한 계정 등) 실제 이메일로 그대로 취급한다.
+const ID_EMAIL_DOMAIN = 'runewalker.local';
+const ID_PATTERN = /^[a-zA-Z0-9_]{3,20}$/;
+
+function toAuthEmail(idOrEmail) {
+  return idOrEmail.includes('@') ? idOrEmail : `${idOrEmail.toLowerCase()}@${ID_EMAIL_DOMAIN}`;
+}
+
 const INPUT_STYLE = `
   width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 9px;
   border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.32); color: #fff;
@@ -107,7 +116,7 @@ export class AuthScreen {
       <div style="font-size:12px; color:#9a92ac; text-align:center; margin:8px 0 24px;">
         계정으로 로그인하면 진행 상황이 자동으로 저장됩니다
       </div>
-      <input id="authEmail" class="authInput" type="email" autocomplete="email" placeholder="이메일" style="${INPUT_STYLE}" />
+      <input id="authEmail" class="authInput" type="text" autocomplete="username" placeholder="아이디 (영문/숫자 3~20자)" style="${INPUT_STYLE}" />
       <input id="authPassword" class="authInput" type="password" autocomplete="current-password" placeholder="비밀번호 (6자 이상)"
         style="${INPUT_STYLE} margin-top:10px;" />
       <div id="authError" style="color:#ff8a8a; font-size:12px; min-height:16px; margin-top:10px; line-height:1.4;"></div>
@@ -142,7 +151,7 @@ export class AuthScreen {
   }
 
   _readCreds() {
-    return { email: this.emailEl.value.trim(), password: this.passwordEl.value };
+    return { id: this.emailEl.value.trim(), password: this.passwordEl.value };
   }
 
   // 이미 로그인 세션이 남아있으면 폼 없이 바로 통과, 아니면 로그인/회원가입 완료까지 대기
@@ -160,15 +169,15 @@ export class AuthScreen {
 
   _bindEvents(resolve) {
     this.loginBtn.addEventListener('click', async () => {
-      const { email, password } = this._readCreds();
+      const { id, password } = this._readCreds();
       this.errorEl.textContent = '';
-      if (!email || !password) {
-        this.errorEl.textContent = '이메일과 비밀번호를 입력해주세요';
+      if (!id || !password) {
+        this.errorEl.textContent = '아이디와 비밀번호를 입력해주세요';
         return;
       }
       this._setBusy(true);
       this.statusEl.textContent = '로그인 중...';
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: toAuthEmail(id), password });
       this._setBusy(false);
       if (error) {
         this.statusEl.textContent = '';
@@ -180,10 +189,14 @@ export class AuthScreen {
     });
 
     this.signupBtn.addEventListener('click', async () => {
-      const { email, password } = this._readCreds();
+      const { id, password } = this._readCreds();
       this.errorEl.textContent = '';
-      if (!email || !password) {
-        this.errorEl.textContent = '이메일과 비밀번호를 입력해주세요';
+      if (!id || !password) {
+        this.errorEl.textContent = '아이디와 비밀번호를 입력해주세요';
+        return;
+      }
+      if (!id.includes('@') && !ID_PATTERN.test(id)) {
+        this.errorEl.textContent = '아이디는 영문/숫자/밑줄(_)만 사용해 3~20자로 입력해주세요';
         return;
       }
       if (password.length < 6) {
@@ -192,7 +205,11 @@ export class AuthScreen {
       }
       this._setBusy(true);
       this.statusEl.textContent = '가입 처리 중...';
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      const { data, error } = await supabase.auth.signUp({
+        email: toAuthEmail(id),
+        password,
+        options: { data: { username: id.includes('@') ? id.split('@')[0] : id } },
+      });
       this._setBusy(false);
       if (error) {
         this.statusEl.textContent = '';
@@ -204,8 +221,10 @@ export class AuthScreen {
         resolve(data.user);
         return;
       }
-      // 이메일 확인이 켜져 있는 프로젝트라면 세션이 바로 생성되지 않음
-      this.statusEl.textContent = '가입 완료! 이메일의 확인 링크를 클릭한 뒤 로그인해주세요.';
+      // Supabase 프로젝트에 "Confirm email"이 켜져 있으면 세션이 바로 생성되지 않음.
+      // 아이디로 만든 가짜 이메일(@runewalker.local)은 실제 수신함이 없어 확인 링크를 받을 수 없으므로,
+      // Supabase 대시보드 Authentication > Providers > Email에서 Confirm email을 꺼둬야 한다.
+      this.errorEl.textContent = '가입 처리가 완료되지 않았어요. 잠시 후 다시 시도해주세요.';
     });
   }
 

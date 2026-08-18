@@ -1,5 +1,15 @@
 import * as THREE from 'three';
 
+// 관절 피벗 헬퍼 — pivot을 관절 위치에 두고 메시를 localY만큼 아래로 늘어뜨려 회전 애니메이션이 자연스럽게 보이도록 함
+function limbPivot(parent, x, y, z, mesh, localY) {
+  const pivot = new THREE.Group();
+  pivot.position.set(x, y, z);
+  mesh.position.y = localY;
+  pivot.add(mesh);
+  parent.add(pivot);
+  return pivot;
+}
+
 // 보스: 타락한 룬 수호자
 // 빌드 대응력 테스트 철학(GDD) — 슬램(광역, 근접 회피 요구)과 돌진(직선 히트, 기동력 요구) 두 패턴을 조합.
 const AGGRO_RANGE = 20;
@@ -46,6 +56,7 @@ export class Boss {
     this.chargeDir = { x: 0, z: 1 };
     this._chargeHit = false;
     this.phase2 = false;
+    this.animPhase = Math.random() * 10;
 
     this.isDead = false;
     this.sealed = false; // 콜로세움 몬스터가 레벨 결계 뒤에서 잠들어 있을 때 true
@@ -69,6 +80,16 @@ export class Boss {
       this.deathTimer = DEATH_FADE_TIME;
       this.telegraphRing.visible = false;
     }
+  }
+
+  // 저장된 진행 상황을 불러올 때, 이전 세션에서 이미 처치한 보스를 애니메이션 없이 즉시 죽은 상태로 되돌림
+  forceKill() {
+    this.hp = 0;
+    this.isDead = true;
+    this.xpGranted = true;
+    this.deathTimer = 0;
+    this.group.scale.setScalar(0);
+    this.telegraphRing.visible = false;
   }
 
   applyBurn(dps, duration) {
@@ -109,6 +130,7 @@ export class Boss {
     }
     if (this.chargeCdTimer > 0) this.chargeCdTimer -= dt;
     if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
+    this.animPhase += dt;
 
     const bodyMat = this.group.userData.bodyMat;
     const telegraphing = this.state === 'slamWindup' || this.state === 'chargeWindup';
@@ -179,6 +201,39 @@ export class Boss {
       this.timer -= dt;
       if (this.timer <= 0) this.state = 'chase';
     }
+
+    this.animatePose(dt);
+  }
+
+  // 무기 팔의 예비동작/타격/복귀 포즈와 숨쉬기 펄스를 상태 머신에서 그대로 읽어와 구동
+  animatePose(dt) {
+    const rig = this.group.userData;
+    if (rig.torso && rig.torsoBaseScale) {
+      const breathe = 1 + Math.sin(this.animPhase * 1.4) * 0.018;
+      rig.torso.scale.set(
+        rig.torsoBaseScale.x * breathe,
+        rig.torsoBaseScale.y * breathe,
+        rig.torsoBaseScale.z * breathe
+      );
+    }
+    if (rig.weaponArmPivot) {
+      let target = 0.35;
+      if (this.state === 'slamWindup') {
+        const dur = this.phase2 ? SLAM_WINDUP * 0.7 : SLAM_WINDUP;
+        const t = 1 - Math.max(0, this.timer) / dur;
+        target = 0.35 - t * 2.7;
+      } else if (this.state === 'slamRecover') {
+        const dur = this.phase2 ? SLAM_RECOVER * 0.7 : SLAM_RECOVER;
+        const t = Math.max(0, this.timer) / dur;
+        target = 0.35 + t * 1.1;
+      } else if (this.state === 'chargeWindup' || this.state === 'charging') {
+        target = -0.55;
+      }
+      rig.weaponArmPivot.rotation.x += (target - rig.weaponArmPivot.rotation.x) * Math.min(1, dt * 9);
+    }
+    if (rig.banner) {
+      rig.banner.rotation.y = Math.sin(this.animPhase * 0.7) * 0.12;
+    }
   }
 
   beginSlam() {
@@ -228,55 +283,124 @@ export class Boss {
 
 function buildGuardianMesh() {
   const group = new THREE.Group();
+  const rig = group.userData;
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x362a40, flatShading: true });
-  const torso = new THREE.Mesh(new THREE.DodecahedronGeometry(1.6, 0), bodyMat);
-  torso.scale.set(1, 1.3, 0.85);
-  torso.position.y = 2.0;
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2033, flatShading: true });
+
+  const torso = new THREE.Mesh(new THREE.DodecahedronGeometry(1.55, 0), bodyMat);
+  torso.scale.set(1.05, 1.35, 0.85);
+  torso.position.y = 2.05;
   torso.castShadow = true;
   group.add(torso);
+  rig.torso = torso;
+  rig.torsoBaseScale = torso.scale.clone();
 
-  const limbMat = new THREE.MeshStandardMaterial({ color: 0x2a2033, flatShading: true });
+  const plateMat = new THREE.MeshStandardMaterial({ color: 0x161018, flatShading: true });
+  const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.0, 0.25), plateMat);
+  chestPlate.position.set(0, 2.15, 0.75);
+  group.add(chestPlate);
+
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0x9b3fe0, emissive: 0x7a2fc0, emissiveIntensity: 1.1, flatShading: true,
+  });
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), coreMat);
+  core.position.set(0, 2.15, 0.92);
+  group.add(core);
+
+  const limbMat = new THREE.MeshStandardMaterial({ color: 0x140f1a, flatShading: true });
+
+  // 어깨 견갑 — 톱니처럼 각진 실루엣
   for (const side of [-1, 1]) {
-    const shoulder = new THREE.Mesh(new THREE.OctahedronGeometry(0.75, 0), limbMat);
-    shoulder.position.set(side * 1.35, 2.5, 0);
-    shoulder.castShadow = true;
-    group.add(shoulder);
-
-    const arm = new THREE.Mesh(new THREE.ConeGeometry(0.35, 2.0, 5), limbMat);
-    arm.position.set(side * 1.5, 1.1, 0);
-    arm.rotation.z = side * 0.15;
-    arm.castShadow = true;
-    group.add(arm);
+    const pauldron = new THREE.Mesh(new THREE.OctahedronGeometry(0.6, 0), limbMat);
+    pauldron.scale.set(1.1, 0.8, 1.1);
+    pauldron.position.set(side * 1.25, 2.75, 0.1);
+    pauldron.castShadow = true;
+    group.add(pauldron);
+    for (let i = 0; i < 3; i++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.38, 4), limbMat);
+      spike.position.set(side * (1.15 + i * 0.05), 2.98, -0.2 + i * 0.25);
+      spike.rotation.x = -0.4;
+      group.add(spike);
+    }
   }
 
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x241c2c, flatShading: true });
+  // 왼팔 — 정적인 갈고리 발톱 팔
+  const offArm = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.9, 5), limbMat);
+  offArm.position.set(-1.45, 1.1, 0);
+  offArm.rotation.z = -0.18;
+  offArm.castShadow = true;
+  group.add(offArm);
+  const claw = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.5, 4), limbMat);
+  claw.position.set(-1.6, 0.15, 0.15);
+  claw.rotation.z = -0.3;
+  group.add(claw);
+
+  // 오른팔(무기 팔) — 어깨 피벗에 매달아 슬램/돌진 예비동작에 따라 각도가 바뀜
+  const weaponArmPivot = new THREE.Group();
+  weaponArmPivot.position.set(1.45, 2.55, 0);
+  group.add(weaponArmPivot);
+  rig.weaponArmPivot = weaponArmPivot;
+
+  const upperArm = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.4, 5), limbMat);
+  upperArm.position.y = -0.75;
+  upperArm.castShadow = true;
+  weaponArmPivot.add(upperArm);
+
+  const weaponMat = new THREE.MeshStandardMaterial({
+    color: 0x6a2fa0, emissive: 0xb85fe0, emissiveIntensity: 0.8, flatShading: true,
+  });
+  const haftMat = new THREE.MeshStandardMaterial({ color: 0x201a28, flatShading: true });
+  const weaponGroup = new THREE.Group();
+  weaponGroup.position.set(0, -1.5, 0.15);
+  weaponArmPivot.add(weaponGroup);
+
+  const haft = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 2.0, 6), haftMat);
+  weaponGroup.add(haft);
+  const axeHead = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.9, 4), weaponMat);
+  axeHead.rotation.z = Math.PI / 2;
+  axeHead.position.set(0, 1.0, 0);
+  axeHead.castShadow = true;
+  weaponGroup.add(axeHead);
+  const spikeTip = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.5, 4), weaponMat);
+  spikeTip.position.set(0, 1.35, 0);
+  weaponGroup.add(spikeTip);
+
+  // 다리
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x140f1a, flatShading: true });
   for (const side of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 1.6, 6), legMat);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.62, 1.6, 6), legMat);
     leg.position.set(side * 0.6, 0.8, 0);
     leg.castShadow = true;
     group.add(leg);
   }
 
-  const coreMat = new THREE.MeshStandardMaterial({
-    color: 0x9b3fe0, emissive: 0x7a2fc0, emissiveIntensity: 1, flatShading: true,
-  });
-  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), coreMat);
-  core.position.y = 2.05;
-  group.add(core);
+  // 후드형 머리 + 붉은 눈꺼풀 슬릿
+  const hoodMat = new THREE.MeshStandardMaterial({ color: 0x1c1524, flatShading: true });
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.55, 0.95, 6), hoodMat);
+  hood.position.set(0, 3.35, 0.1);
+  hood.castShadow = true;
+  group.add(hood);
 
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 1.2 });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 1.3 });
   for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), eyeMat);
-    eye.position.set(side * 0.42, 3.15, 0.9);
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.04), eyeMat);
+    eye.position.set(side * 0.18, 3.28, 0.48);
     group.add(eye);
   }
 
-  const light = new THREE.PointLight(0x9b3fe0, 1.1, 8);
-  light.position.y = 2.2;
+  // 등 뒤 낡은 깃발 천
+  const bannerMat = new THREE.MeshStandardMaterial({ color: 0x3a1830, flatShading: true, side: THREE.DoubleSide });
+  const banner = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.7), bannerMat);
+  banner.position.set(0, 2.1, -0.55);
+  banner.rotation.x = 0.15;
+  group.add(banner);
+  rig.banner = banner;
+
+  const light = new THREE.PointLight(0x9b3fe0, 1.2, 8);
+  light.position.set(0, 2.15, 0.92);
   group.add(light);
 
-  group.userData.bodyMat = bodyMat;
+  rig.bodyMat = bodyMat;
   group.scale.setScalar(1.5);
   return group;
 }
@@ -344,6 +468,7 @@ export class SporeQueen {
     this.shotsFired = 0;
     this.shotTimer = 0;
     this.phase2 = false;
+    this.animPhase = Math.random() * 10;
 
     this.poolState = 'idle'; // idle -> telegraph -> active
     this.poolTimer = 0;
@@ -376,6 +501,18 @@ export class SporeQueen {
       this.poolDisc.visible = false;
       this.clearProjectiles();
     }
+  }
+
+  // 저장된 진행 상황을 불러올 때, 이전 세션에서 이미 처치한 보스를 애니메이션 없이 즉시 죽은 상태로 되돌림
+  forceKill() {
+    this.hp = 0;
+    this.isDead = true;
+    this.xpGranted = true;
+    this.deathTimer = 0;
+    this.group.scale.setScalar(0);
+    this.poolRing.visible = false;
+    this.poolDisc.visible = false;
+    this.clearProjectiles();
   }
 
   applyBurn(dps, duration) {
@@ -424,6 +561,7 @@ export class SporeQueen {
     if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
     if (this.volleyCdTimer > 0) this.volleyCdTimer -= dt;
     if (this.poolCdTimer > 0) this.poolCdTimer -= dt;
+    this.animPhase += dt;
 
     const bodyMat = this.group.userData.bodyMat;
     const telegraphing = this.state === 'volleyWindup';
@@ -518,7 +656,28 @@ export class SporeQueen {
       }
     }
 
+    this.animatePose(dt);
     this.updateProjectiles(dt, playerGroup, onAttackPlayer);
+  }
+
+  // 숨쉬기 펄스 + 연사 예비동작 시 꽃잎 왕관이 활짝 벌어지는 포즈
+  animatePose(dt) {
+    const rig = this.group.userData;
+    if (rig.torso && rig.torsoBaseScale) {
+      const breathe = 1 + Math.sin(this.animPhase * 1.5) * 0.025;
+      rig.torso.scale.set(
+        rig.torsoBaseScale.x * breathe,
+        rig.torsoBaseScale.y * breathe,
+        rig.torsoBaseScale.z * breathe
+      );
+    }
+    if (rig.petalPivots) {
+      const opening = this.state === 'volleyWindup' || this.state === 'volleying' ? 1 : 0;
+      const target = 0.1 + opening * 0.8;
+      for (const pivot of rig.petalPivots) {
+        pivot.rotation.x += (target - pivot.rotation.x) * Math.min(1, dt * 8);
+      }
+    }
   }
 
   fireProjectile(px, pz) {
@@ -578,43 +737,72 @@ export class SporeQueen {
 
 function buildSporeQueenMesh() {
   const group = new THREE.Group();
+  const rig = group.userData;
 
-  const stalkMat = new THREE.MeshStandardMaterial({ color: 0x2f1f38, flatShading: true });
-  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.7, 1.6, 6), stalkMat);
+  const stalkMat = new THREE.MeshStandardMaterial({ color: 0x241830, flatShading: true });
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.75, 1.6, 6), stalkMat);
   stalk.position.y = 0.8;
   stalk.castShadow = true;
   group.add(stalk);
 
+  // 늘어진 덩굴 촉수 — 밑둥 실루엣을 보완
+  const tendrilMat = new THREE.MeshStandardMaterial({ color: 0x1c1424, flatShading: true });
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2;
+    const tendril = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.9, 4), tendrilMat);
+    tendril.position.set(Math.cos(angle) * 0.55, 0.35, Math.sin(angle) * 0.55);
+    tendril.rotation.x = Math.PI;
+    tendril.rotation.z = Math.cos(angle) * 0.3;
+    group.add(tendril);
+  }
+
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x4a2e55, flatShading: true });
-  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(1.35, 0), bodyMat);
-  body.scale.set(1, 1.15, 1);
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(1.2, 0), bodyMat);
+  body.scale.set(1, 1.1, 1);
   body.position.y = 2.5;
   body.castShadow = true;
   group.add(body);
+  rig.torso = body;
+  rig.torsoBaseScale = body.scale.clone();
 
-  const podMat = new THREE.MeshStandardMaterial({
-    color: 0x6a2fa0, emissive: 0x9fe870, emissiveIntensity: 0.9, flatShading: true,
+  // 꽃잎 왕관 — 평상시엔 오므리고, 연사 예비동작 시 활짝 벌어짐
+  const petalMat = new THREE.MeshStandardMaterial({
+    color: 0x6a2fa0, emissive: 0x9fe870, emissiveIntensity: 0.75, flatShading: true,
   });
-  for (let i = 0; i < 5; i++) {
-    const angle = (i / 5) * Math.PI * 2;
-    const pod = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), podMat);
-    pod.position.set(Math.cos(angle) * 1.15, 2.5 + Math.sin(i * 1.7) * 0.4, Math.sin(angle) * 1.15);
-    pod.castShadow = true;
-    group.add(pod);
+  const petalPivots = [];
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const pivot = new THREE.Group();
+    pivot.position.set(Math.cos(angle) * 0.4, 2.95, Math.sin(angle) * 0.4);
+    pivot.rotation.y = -angle;
+    group.add(pivot);
+    const petal = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.95, 4), petalMat);
+    petal.rotation.x = Math.PI / 2;
+    petal.position.z = 0.45;
+    petal.castShadow = true;
+    pivot.add(petal);
+    petalPivots.push(pivot);
   }
+  rig.petalPivots = petalPivots;
 
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xccff88, emissive: 0x9fe870, emissiveIntensity: 1.2 });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xccff88, emissive: 0x9fe870, emissiveIntensity: 1.3 });
   for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 8, 8), eyeMat);
-    eye.position.set(side * 0.4, 3.15, 1.0);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), eyeMat);
+    eye.position.set(side * 0.42, 2.65, 1.05);
     group.add(eye);
   }
 
-  const light = new THREE.PointLight(0x9fe870, 1.1, 8);
+  const mawMat = new THREE.MeshStandardMaterial({ color: 0x1c1424, flatShading: true });
+  const maw = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), mawMat);
+  maw.scale.set(1, 0.6, 0.6);
+  maw.position.set(0, 2.3, 1.15);
+  group.add(maw);
+
+  const light = new THREE.PointLight(0x9fe870, 1.2, 9);
   light.position.y = 2.6;
   group.add(light);
 
-  group.userData.bodyMat = bodyMat;
+  rig.bodyMat = bodyMat;
   group.scale.setScalar(1.4);
   return group;
 }
@@ -688,6 +876,7 @@ export class CorruptedBear {
     this._chargeHit = false;
     this.phase2 = false;
     this.phase3 = false;
+    this.animPhase = Math.random() * 10;
 
     this.novaState = 'idle'; // idle -> telegraph -> idle(즉시 처리)
     this.novaTimer = 0;
@@ -721,6 +910,14 @@ export class CorruptedBear {
     this.telegraphRing.visible = false;
     this.novaRing.visible = false;
     this.clearProjectiles();
+  }
+
+  // 저장된 진행 상황을 불러올 때, 이전 세션에서 이미 처치한 보스를 애니메이션 없이 즉시 죽은 상태로 되돌림
+  forceKill() {
+    this.die();
+    this.xpGranted = true;
+    this.deathTimer = 0;
+    this.group.scale.setScalar(0);
   }
 
   applyBurn(dps, duration) {
@@ -765,6 +962,7 @@ export class CorruptedBear {
     if (this.burstCdTimer > 0) this.burstCdTimer -= dt;
     if (this.novaCdTimer > 0) this.novaCdTimer -= dt;
     if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
+    this.animPhase += dt;
 
     const bodyMat = this.group.userData.bodyMat;
     const telegraphing = this.state === 'slamWindup' || this.state === 'chargeWindup' || this.state === 'burstWindup';
@@ -875,7 +1073,42 @@ export class CorruptedBear {
       }
     }
 
+    this.animatePose(dt);
     this.updateProjectiles(dt, playerGroup, onAttackPlayer);
+  }
+
+  // 슬램 전 앞다리를 들어 몸을 세우고, 돌진 전 웅크리며, 포효 시 아가리를 벌리는 예비동작 포즈
+  animatePose(dt) {
+    const rig = this.group.userData;
+    if (rig.torso && rig.torsoBaseScale) {
+      const breathe = 1 + Math.sin(this.animPhase * 1.3) * 0.015;
+      rig.torso.scale.set(
+        rig.torsoBaseScale.x * breathe,
+        rig.torsoBaseScale.y * breathe,
+        rig.torsoBaseScale.z * breathe
+      );
+    }
+    const roaring = this.novaState === 'telegraph' || this.state === 'burstWindup';
+    if (rig.torsoPivot) {
+      let target = 0;
+      if (this.state === 'slamWindup') target = -0.32;
+      else if (this.state === 'chargeWindup') target = 0.16;
+      else if (roaring) target = -0.14;
+      rig.torsoPivot.rotation.x += (target - rig.torsoPivot.rotation.x) * Math.min(1, dt * 8);
+    }
+    if (rig.legPivots) {
+      const frontLift = this.state === 'slamWindup' ? -0.42 : 0;
+      const crouch = this.state === 'chargeWindup' ? 0.22 : 0;
+      const frontTarget = frontLift + crouch * 0.3;
+      rig.legPivots.FL.rotation.x += (frontTarget - rig.legPivots.FL.rotation.x) * Math.min(1, dt * 9);
+      rig.legPivots.FR.rotation.x += (frontTarget - rig.legPivots.FR.rotation.x) * Math.min(1, dt * 9);
+      rig.legPivots.BL.rotation.x += (crouch - rig.legPivots.BL.rotation.x) * Math.min(1, dt * 9);
+      rig.legPivots.BR.rotation.x += (crouch - rig.legPivots.BR.rotation.x) * Math.min(1, dt * 9);
+    }
+    if (rig.jaw) {
+      const target = roaring ? 0.4 : 0.06;
+      rig.jaw.rotation.x += (target - rig.jaw.rotation.x) * Math.min(1, dt * 10);
+    }
   }
 
   beginSlam() {
@@ -971,79 +1204,144 @@ export class CorruptedBear {
 
 function buildCorruptedBearMesh() {
   const group = new THREE.Group();
+  const rig = group.userData;
 
-  // 웅크린 네발짐승 몸통 (전방 +Z를 바라봄 — 이동 로직의 forward 방향 관례와 일치)
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x241a30, flatShading: true });
-  const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(1.7, 0), bodyMat);
+  // torsoPivot: 다리를 제외한 상체 전체를 담아, 슬램/포효 시 몸을 뒤로 젖히는 포즈를 표현
+  const torsoPivot = new THREE.Group();
+  group.add(torsoPivot);
+  rig.torsoPivot = torsoPivot;
+
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x201830, flatShading: true });
+  const torso = new THREE.Mesh(new THREE.IcosahedronGeometry(1.75, 0), bodyMat);
   torso.scale.set(1.3, 1.15, 1.9);
   torso.position.set(0, 1.9, -0.3);
   torso.castShadow = true;
-  group.add(torso);
+  torsoPivot.add(torso);
+  rig.torso = torso;
+  rig.torsoBaseScale = torso.scale.clone();
 
   const hump = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 0), bodyMat);
   hump.scale.set(1, 0.9, 1);
   hump.position.set(0, 2.7, -1.3);
   hump.castShadow = true;
-  group.add(hump);
+  torsoPivot.add(hump);
 
-  const headMat = new THREE.MeshStandardMaterial({ color: 0x2a1f38, flatShading: true });
-  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85, 0), headMat);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x241c34, flatShading: true });
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.88, 0), headMat);
   head.scale.set(1, 0.9, 1.05);
   head.position.set(0, 1.9, 1.9);
   head.castShadow = true;
-  group.add(head);
+  torsoPivot.add(head);
 
   const snout = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.0, 6), headMat);
   snout.rotation.x = Math.PI / 2;
-  snout.position.set(0, 1.65, 2.65);
-  group.add(snout);
+  snout.position.set(0, 1.6, 2.6);
+  torsoPivot.add(snout);
+
+  // 벌어지는 아가리 — 격노 포효/포자 파열 예비동작 시 열림
+  const jawMat = new THREE.MeshStandardMaterial({ color: 0x120e18, flatShading: true });
+  const jawPivot = new THREE.Group();
+  jawPivot.position.set(0, 1.62, 2.35);
+  torsoPivot.add(jawPivot);
+  rig.jaw = jawPivot;
+  const jawMesh = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.65, 5), jawMat);
+  jawMesh.rotation.x = Math.PI / 2;
+  jawMesh.position.set(0, -0.12, 0.32);
+  jawPivot.add(jawMesh);
+  const throatMat = new THREE.MeshStandardMaterial({
+    color: 0xff6fe0, emissive: 0xb85fe0, emissiveIntensity: 1.4, flatShading: true,
+  });
+  const throat = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), throatMat);
+  throat.position.set(0, -0.08, 0.4);
+  jawPivot.add(throat);
+  const fangMat = new THREE.MeshStandardMaterial({ color: 0xe8e2d0, flatShading: true });
+  for (const side of [-1, 1]) {
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.24, 4), fangMat);
+    fang.rotation.x = Math.PI;
+    fang.position.set(side * 0.13, 0.05, 0.55);
+    torsoPivot.add(fang);
+  }
 
   for (const side of [-1, 1]) {
     const ear = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.5, 5), headMat);
     ear.position.set(side * 0.5, 2.55, 1.7);
-    group.add(ear);
+    torsoPivot.add(ear);
   }
 
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x1c1424, flatShading: true });
-  const legSpecs = [[-0.9, -1.5], [0.9, -1.5], [-1.0, 1.4], [1.0, 1.4]];
-  for (const [lx, lz] of legSpecs) {
-    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.55, 1.9, 6), legMat);
-    leg.position.set(lx, 0.95, lz);
-    leg.castShadow = true;
-    group.add(leg);
-  }
-
-  // 등을 따라 돋아난 타락 결정 돌기 — 다른 보스와 구분되는 최종 보스의 상징
+  // 등줄기를 따라 솟은 타락 결정 갈기 — 다른 보스와 구분되는 왕관 실루엣
   const spikeMat = new THREE.MeshStandardMaterial({
-    color: 0x5a2a70, emissive: 0xb85fe0, emissiveIntensity: 1, flatShading: true,
+    color: 0x5a2a70, emissive: 0xb85fe0, emissiveIntensity: 1.1, flatShading: true,
   });
-  const spikePositions = [[0, 3.0, -1.6], [0, 3.15, -0.7], [0, 3.05, 0.2], [0, 2.7, 1.0]];
-  for (const [sx, sy, sz] of spikePositions) {
-    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.75, 4), spikeMat);
+  const spikePositions = [
+    [0, 3.15, -1.7, 0.5], [0, 3.35, -0.9, 0.62], [0, 3.35, -0.1, 0.6],
+    [0, 3.1, 0.7, 0.5], [-0.32, 2.95, -0.4, 0.36], [0.32, 2.95, -0.4, 0.36],
+  ];
+  for (const [sx, sy, sz, h] of spikePositions) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.16, h, 4), spikeMat);
     spike.position.set(sx, sy, sz);
     spike.rotation.x = -0.3;
-    group.add(spike);
+    torsoPivot.add(spike);
+  }
+
+  // 갈라진 가죽 틈으로 새어나오는 빛 — 균열 표현
+  const crackMat = new THREE.MeshStandardMaterial({
+    color: 0xb85fe0, emissive: 0xff6fe0, emissiveIntensity: 1.1, flatShading: true,
+  });
+  const crackSpecs = [
+    [0.5, 2.0, 0, 0.4, 0.3], [-0.55, 1.6, 0.3, -0.35, 0.45], [0.4, 1.3, 0.7, 0.5, 0.32],
+    [-0.3, 2.3, -0.6, -0.5, 0.3],
+  ];
+  for (const [x, y, z, ry, len] of crackSpecs) {
+    const crack = new THREE.Mesh(new THREE.BoxGeometry(0.05, len, 0.03), crackMat);
+    crack.position.set(x, y, z);
+    crack.rotation.y = ry;
+    crack.rotation.z = 0.3;
+    torsoPivot.add(crack);
   }
 
   const coreMat = new THREE.MeshStandardMaterial({
-    color: 0xb85fe0, emissive: 0x9b3fe0, emissiveIntensity: 1.3, flatShading: true,
+    color: 0xb85fe0, emissive: 0x9b3fe0, emissiveIntensity: 1.4, flatShading: true,
   });
   const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), coreMat);
   core.position.set(0, 1.7, 0.6);
-  group.add(core);
+  torsoPivot.add(core);
 
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 1.4 });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 1.5 });
   for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 8), eyeMat);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 8), eyeMat);
     eye.position.set(side * 0.42, 2.05, 2.35);
-    group.add(eye);
+    torsoPivot.add(eye);
   }
 
   const light = new THREE.PointLight(0xb85fe0, 1.6, 10);
   light.position.set(0, 2.2, 0.6);
-  group.add(light);
+  torsoPivot.add(light);
 
-  group.userData.bodyMat = bodyMat;
+  // 다리 — 엉덩이/어깨 피벗으로 슬램 전 앞발을 들거나 돌진 전 웅크리는 자세를 구현
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x1a1420, flatShading: true });
+  const clawMat = new THREE.MeshStandardMaterial({ color: 0xe8e2d0, flatShading: true });
+  const legSpecs = [
+    { key: 'FL', x: -1.0, z: 1.4 },
+    { key: 'FR', x: 1.0, z: 1.4 },
+    { key: 'BL', x: -0.9, z: -1.5 },
+    { key: 'BR', x: 0.9, z: -1.5 },
+  ];
+  const legPivots = {};
+  for (const spec of legSpecs) {
+    const legMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.58, 1.9, 6), legMat);
+    legMesh.castShadow = true;
+    const pivot = limbPivot(group, spec.x, 1.9, spec.z, legMesh, -0.95);
+    for (let i = -1; i <= 1; i++) {
+      const claw = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.3, 4), clawMat);
+      claw.position.set(i * 0.16, -1.85, 0.28);
+      claw.rotation.x = Math.PI / 2 + 0.25;
+      pivot.add(claw);
+    }
+    legPivots[spec.key] = pivot;
+  }
+  rig.legPivots = legPivots;
+
+  rig.bodyMat = bodyMat;
   group.scale.setScalar(1.9);
   return group;
 }

@@ -90,9 +90,18 @@ async function main() {
   const bosses = [runeGuardian, sporeQueen, finalBoss];
   const allTargets = [...enemies, ...bosses];
 
+  // 처치 상태를 저장/복원하기 위한 식별자 — 콜로세움 골렘은 의도적으로 리스폰하는 잡몹이라 제외
+  runeGuardian.saveId = 'runeGuardian';
+  sporeQueen.saveId = 'sporeQueen';
+  finalBoss.saveId = 'finalBoss';
+  const persistentBosses = [runeGuardian, sporeQueen, finalBoss];
+  const defeatedBossIds = new Set();
+  let colosseumCleared = false;
+  let victoryTriggered = false;
+
   const ui = new UI(appEl);
   ui.updateHUD(player);
-  ui.buildAccountBar(user.email, () => {
+  ui.buildAccountBar(user.user_metadata?.username || user.email, () => {
     supabase.auth.signOut().then(() => window.location.reload());
   });
 
@@ -110,6 +119,8 @@ async function main() {
       baseMaxHp: player.baseMaxHp,
       skillPoints: skillState.skillPoints,
       allocatedSkills: Array.from(skillState.allocated),
+      defeatedBosses: Array.from(defeatedBossIds),
+      colosseumCleared,
     });
   }
   setInterval(() => flushSave(), 5000);
@@ -122,6 +133,21 @@ async function main() {
   if (existingSave) {
     skillState.loadState(existingSave);
     player.loadProgress(existingSave, skillState);
+
+    // 이전 세션에서 이미 처치한 보스는 애니메이션 없이 즉시 죽은 상태로 복원 (재접속 시 부활 방지)
+    for (const id of existingSave.defeated_bosses ?? []) {
+      defeatedBossIds.add(id);
+      persistentBosses.find((b) => b.saveId === id)?.forceKill();
+    }
+    if (existingSave.colosseum_cleared) colosseumCleared = true;
+
+    // 이전 세션에서 이미 최종 보스를 처치했다면, 재접속할 때마다 승리 연출이 반복 재생되지 않도록
+    // 정화 애니메이션만 완료 상태로 건너뛰고 승리 화면은 다시 띄우지 않음
+    if (finalBoss.isDead) {
+      victoryTriggered = true;
+      purifyWorld();
+      updateWorld(999);
+    }
   } else {
     await flushSave(true);
   }
@@ -171,6 +197,7 @@ async function main() {
       if (boss.isDead && !boss.xpGranted) {
         boss.xpGranted = true;
         player.gainXp(boss.xpReward, skillState);
+        if (boss.saveId) defeatedBossIds.add(boss.saveId);
         markDirty();
       }
     }
@@ -189,15 +216,14 @@ async function main() {
     }
   }
 
-  let colosseumCleared = false;
   function checkColosseumCleared() {
     // 한 번 클리어되면 이후 골렘이 리스폰하더라도 성 진입 결계가 다시 잠기지 않도록 래치
     if (!colosseumCleared && colosseumMonsters.every((m) => m.isDead)) {
       colosseumCleared = true;
+      markDirty();
     }
   }
 
-  let victoryTriggered = false;
   function checkVictory() {
     if (victoryTriggered) return;
     if (finalBoss.isDead) {
