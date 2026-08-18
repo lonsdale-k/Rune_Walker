@@ -1367,3 +1367,176 @@ function buildPoolDisc() {
   disc.rotation.x = -Math.PI / 2;
   return disc;
 }
+
+// --- 보스: 동굴 폭군 (동굴 스테이지) ---
+// 룬 수호자(슬램+돌진) 베이스에 "바닥 붕괴" — 플레이어 위치를 겨냥해 지연 폭발하는 장판 다발 —
+// 하나를 더해 재포지셔닝 압박을 얹은 동굴 스테이지용 보스. 기존 Boss 클래스를 상속해 상용 로직
+// (체력/페이즈/텔레그래프/사망 페이드)은 그대로 재사용하고 붕괴 패턴만 새로 추가한다.
+const CT_ERUPT_RANGE = 20;
+const CT_ERUPT_TELEGRAPH = 1.0;
+const CT_ERUPT_COOLDOWN = 6;
+const CT_ERUPT_COOLDOWN_PHASE2 = 4;
+const CT_ERUPT_COUNT = 3;
+const CT_ERUPT_RADIUS = 2.6;
+const CT_ERUPT_DAMAGE = 20;
+
+export class CaveTyrant extends Boss {
+  constructor(scene, spawnPos, opts = {}) {
+    super(scene, spawnPos, { name: opts.name ?? '동굴 폭군', maxHp: opts.maxHp ?? 720, ...opts });
+    // Boss 기본 생성자는 룬 수호자 메시를 만드므로, 동굴 폭군 전용 메시로 교체
+    scene.remove(this.group);
+    this.group = buildCaveTyrantMesh();
+    this.group.position.copy(spawnPos);
+    scene.add(this.group);
+    this.eruptCdTimer = 2.5;
+    this.eruptZones = []; // { ring, timer, x, z, resolved }
+  }
+
+  update(dt, playerGroup, onAttackPlayer) {
+    if (this.sealed) return;
+    super.update(dt, playerGroup, onAttackPlayer);
+    if (this.isDead) {
+      this.updateEruptZones(dt, playerGroup, onAttackPlayer);
+      return;
+    }
+    if (this.eruptCdTimer > 0) this.eruptCdTimer -= dt;
+
+    const px = playerGroup.position.x;
+    const pz = playerGroup.position.z;
+    const distToPlayer = Math.hypot(px - this.group.position.x, pz - this.group.position.z);
+    if (this.state === 'chase' && this.eruptCdTimer <= 0 && distToPlayer <= CT_ERUPT_RANGE) {
+      this.beginErupt(px, pz);
+    }
+    this.updateEruptZones(dt, playerGroup, onAttackPlayer);
+  }
+
+  beginErupt(px, pz) {
+    this.eruptCdTimer = this.phase2 ? CT_ERUPT_COOLDOWN_PHASE2 : CT_ERUPT_COOLDOWN;
+    for (let i = 0; i < CT_ERUPT_COUNT; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = Math.random() * 3.5;
+      const x = px + Math.cos(angle) * r;
+      const z = pz + Math.sin(angle) * r;
+      const ring = buildRing(CT_ERUPT_RADIUS, 0xff8a3c, 0.4);
+      ring.position.set(x, 0.06, z);
+      this.scene.add(ring);
+      this.eruptZones.push({ ring, timer: CT_ERUPT_TELEGRAPH, x, z, resolved: false });
+    }
+  }
+
+  updateEruptZones(dt, playerGroup, onAttackPlayer) {
+    if (this.eruptZones.length === 0) return;
+    const px = playerGroup.position.x;
+    const pz = playerGroup.position.z;
+    for (let i = this.eruptZones.length - 1; i >= 0; i--) {
+      const z = this.eruptZones[i];
+      z.timer -= dt;
+      if (z.timer <= 0 && !z.resolved) {
+        z.resolved = true;
+        this.scene.remove(z.ring);
+        const dist = Math.hypot(px - z.x, pz - z.z);
+        if (dist <= CT_ERUPT_RADIUS) onAttackPlayer(CT_ERUPT_DAMAGE);
+        this.eruptZones.splice(i, 1);
+      }
+    }
+  }
+
+  takeDamage(amount) {
+    const wasDead = this.isDead;
+    super.takeDamage(amount);
+    if (!wasDead && this.isDead) {
+      for (const z of this.eruptZones) this.scene.remove(z.ring);
+      this.eruptZones = [];
+    }
+  }
+
+  forceKill() {
+    super.forceKill();
+    for (const z of this.eruptZones) this.scene.remove(z.ring);
+    this.eruptZones = [];
+  }
+}
+
+function buildCaveTyrantMesh() {
+  const group = new THREE.Group();
+  const rig = group.userData;
+
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2a2420, flatShading: true });
+  const torso = new THREE.Mesh(new THREE.DodecahedronGeometry(1.5, 0), bodyMat);
+  torso.scale.set(1.15, 1.1, 0.95);
+  torso.position.y = 2.0;
+  torso.castShadow = true;
+  group.add(torso);
+  rig.torso = torso;
+  rig.torsoBaseScale = torso.scale.clone();
+
+  const crustMat = new THREE.MeshStandardMaterial({ color: 0x18120e, flatShading: true });
+  const crustSpecs = [[0.5, 1.3, 0.35, 0.32], [-0.45, 1.6, -0.2, 0.28], [0.1, 1.95, 0.4, 0.26]];
+  for (const [x, y, z, s] of crustSpecs) {
+    const chunk = new THREE.Mesh(new THREE.OctahedronGeometry(s, 0), crustMat);
+    chunk.position.set(x, y, z);
+    chunk.rotation.set(Math.random(), Math.random(), Math.random());
+    group.add(chunk);
+  }
+
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0xff8a3c, emissive: 0xff6a1c, emissiveIntensity: 1.3, flatShading: true,
+  });
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.4, 0), coreMat);
+  core.position.set(0, 2.1, 0.85);
+  group.add(core);
+
+  const limbMat = new THREE.MeshStandardMaterial({ color: 0x1c1712, flatShading: true });
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), limbMat);
+    shoulder.scale.set(1.1, 0.8, 1.1);
+    shoulder.position.set(side * 1.2, 2.7, 0.05);
+    group.add(shoulder);
+  }
+
+  const weaponArmPivot = new THREE.Group();
+  weaponArmPivot.position.set(1.4, 2.5, 0);
+  group.add(weaponArmPivot);
+  rig.weaponArmPivot = weaponArmPivot;
+  const fistArm = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 1.6, 6), limbMat);
+  fistArm.position.y = -0.85;
+  fistArm.castShadow = true;
+  weaponArmPivot.add(fistArm);
+  const fistMat = new THREE.MeshStandardMaterial({ color: 0xff8a3c, emissive: 0xff6a1c, emissiveIntensity: 0.8, flatShading: true });
+  const fist = new THREE.Mesh(new THREE.DodecahedronGeometry(0.42, 0), fistMat);
+  fist.position.y = -1.75;
+  weaponArmPivot.add(fist);
+
+  const offArm = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 1.6, 6), limbMat);
+  offArm.position.set(-1.4, 1.65, 0);
+  offArm.castShadow = true;
+  group.add(offArm);
+
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.6, 1.55, 6), limbMat);
+    leg.position.set(side * 0.58, 0.78, 0);
+    leg.castShadow = true;
+    group.add(leg);
+  }
+
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x201a16, flatShading: true });
+  const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.5, 0), headMat);
+  head.position.set(0, 3.3, 0.15);
+  head.castShadow = true;
+  group.add(head);
+
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff8a3c, emissive: 0xff6a1c, emissiveIntensity: 1.4 });
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.04), eyeMat);
+    eye.position.set(side * 0.17, 3.28, 0.46);
+    group.add(eye);
+  }
+
+  const light = new THREE.PointLight(0xff8a3c, 1.1, 8);
+  light.position.set(0, 2.1, 0.85);
+  group.add(light);
+
+  rig.bodyMat = bodyMat;
+  group.scale.setScalar(1.6);
+  return group;
+}

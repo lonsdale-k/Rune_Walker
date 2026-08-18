@@ -9,6 +9,9 @@ export class UI {
     this.enemyBarEls = new Map();
     this._buildHUD();
     this._buildSkillPanel();
+    this._buildHubBar();
+    this._buildStageSelectPanel();
+    this._buildShopPanel();
     this._buildDeathScreen();
     this._buildVictoryScreen();
     this._buildInstructions();
@@ -19,7 +22,7 @@ export class UI {
 
   // 스킬 패널이나 튜토리얼처럼 화면을 덮는 오버레이가 떠 있는 동안은 게임 진행을 멈춰야 함
   isPaused() {
-    return this.panelOpen || this.tutorialOpen;
+    return this.panelOpen || this.tutorialOpen || this.stageSelectOpen || this.shopOpen;
   }
 
   _buildHUD() {
@@ -30,7 +33,10 @@ export class UI {
       text-shadow: 0 1px 3px rgba(0,0,0,0.8);
     `;
     hud.innerHTML = `
-      <div style="font-size:14px; font-weight:600; margin-bottom:4px;">Lv. <span id="lvl">1</span> 룬워커</div>
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+        <div style="font-size:14px; font-weight:600;">Lv. <span id="lvl">1</span> 룬워커</div>
+        <div style="font-size:13px; font-weight:700; color:#ffd166;">🪙 <span id="coins">0</span></div>
+      </div>
       <div style="background:rgba(0,0,0,0.4); border-radius:6px; padding:3px; margin-bottom:6px;">
         <div id="hpBar" style="height:14px; width:100%; background:#e94560; border-radius:4px; transition: width 0.15s;"></div>
       </div>
@@ -45,6 +51,7 @@ export class UI {
     this.hpBarEl = hud.querySelector('#hpBar');
     this.xpBarEl = hud.querySelector('#xpBar');
     this.lvlEl = hud.querySelector('#lvl');
+    this.coinsEl = hud.querySelector('#coins');
     this.skillPointNoticeEl = hud.querySelector('#skillPointNotice');
 
     const skillBar = document.createElement('div');
@@ -109,6 +116,31 @@ export class UI {
       ref.cd.style.height = `${cdPct}%`;
       ref.root.style.opacity = node ? '1' : '0.35';
     }
+  }
+
+  // 스테이지 클리어 시 잠깐 뜨는 안내 배너 (최종보스의 큰 승리 화면과는 별개)
+  showStageCleared(stageName, coins) {
+    if (!this.stageClearedEl) {
+      const el = document.createElement('div');
+      el.style.cssText = `
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        color: #fff; font-size: 22px; font-weight: 800; text-align: center; pointer-events: none;
+        text-shadow: 0 2px 6px rgba(0,0,0,0.9); background: rgba(0,0,0,0.55);
+        padding: 20px 34px; border-radius: 12px; display: none; z-index: 25;
+      `;
+      this.root.appendChild(el);
+      this.stageClearedEl = el;
+    }
+    this.stageClearedEl.innerHTML = `${stageName} 클리어!<div style="font-size:14px; color:#ffd166; margin-top:8px; font-weight:600;">🪙 +${coins}</div>`;
+    this.stageClearedEl.style.display = 'block';
+    clearTimeout(this._stageClearedTimer);
+    this._stageClearedTimer = setTimeout(() => {
+      this.stageClearedEl.style.display = 'none';
+    }, 2600);
+  }
+
+  updateCoins(coins) {
+    if (this.coinsEl) this.coinsEl.textContent = String(coins);
   }
 
   setSkillPointNotice(hasPoints) {
@@ -191,6 +223,175 @@ export class UI {
       this.branchGridEl.appendChild(col);
     }
     this.respecBtn.onclick = onRespec;
+  }
+
+  // --- 허브 전용 UI: 스테이지 선택 / 상점 진입 버튼 (허브에 있을 때만 표시) ---
+  _buildHubBar() {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `
+      position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%);
+      display: none; gap: 12px; z-index: 5;
+    `;
+    wrap.innerHTML = `
+      <button id="hubStageBtn" style="
+        background: rgba(58,110,165,0.85); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+        color: #fff; font-size: 14px; font-weight: 700; padding: 10px 20px; cursor: pointer;
+      ">스테이지 선택</button>
+      <button id="hubShopBtn" style="
+        background: rgba(200,150,50,0.85); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+        color: #fff; font-size: 14px; font-weight: 700; padding: 10px 20px; cursor: pointer;
+      ">상점 · 꾸미기</button>
+    `;
+    this.root.appendChild(wrap);
+    this.hubBarEl = wrap;
+    this.hubStageBtn = wrap.querySelector('#hubStageBtn');
+    this.hubShopBtn = wrap.querySelector('#hubShopBtn');
+  }
+
+  setHubBarVisible(visible) {
+    this.hubBarEl.style.display = visible ? 'flex' : 'none';
+  }
+
+  _buildStageSelectPanel() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: absolute; inset: 0; background: rgba(5,5,10,0.75);
+      display: none; align-items: center; justify-content: center; z-index: 10;
+    `;
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background: #1b1b26; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      padding: 24px 28px; width: 560px; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+      color: #fff; font-family: inherit; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    `;
+    panel.innerHTML = `
+      <div style="font-size:18px; font-weight:700; margin-bottom:14px;">스테이지 선택</div>
+      <div id="stageList" style="display:flex; flex-direction:column; gap:10px;"></div>
+      <div style="margin-top:14px; font-size:12px; color:#8a8a9a;">닫으려면 바깥을 클릭하세요</div>
+    `;
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this.toggleStageSelect(false);
+    });
+    this.root.appendChild(overlay);
+    this.stageSelectEl = overlay;
+    this.stageListEl = panel.querySelector('#stageList');
+    this.stageSelectOpen = false;
+  }
+
+  toggleStageSelect(open = !this.stageSelectOpen) {
+    this.stageSelectOpen = open;
+    this.stageSelectEl.style.display = open ? 'flex' : 'none';
+  }
+
+  renderStageSelect(stages, unlockCheckFn, onEnter) {
+    this.stageListEl.innerHTML = '';
+    for (const stage of stages) {
+      const unlocked = unlockCheckFn(stage);
+      const row = document.createElement('button');
+      row.style.cssText = `
+        display:flex; justify-content:space-between; align-items:center;
+        background: ${unlocked ? '#2b2b3d' : '#1e1e28'}; border: 1px solid ${unlocked ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)'};
+        border-radius: 8px; padding: 14px 16px; cursor: ${unlocked ? 'pointer' : 'default'};
+        color: ${unlocked ? '#fff' : '#5a5a6a'}; font-size: 14px; text-align:left;
+      `;
+      const lockNote = stage.unlock?.minLevel != null
+        ? `Lv.${stage.unlock.minLevel} 필요`
+        : stage.unlock?.prevStageId
+          ? '이전 스테이지 클리어 필요'
+          : '';
+      row.innerHTML = `
+        <div>
+          <div style="font-weight:700; margin-bottom:3px;">${stage.name}</div>
+          <div style="font-size:12px; color:${unlocked ? '#9fb0c0' : '#5a5a6a'};">${unlocked ? '입장 가능' : `🔒 ${lockNote}`}</div>
+        </div>
+        <div style="font-size:12px; color:#ffd166;">${stage.clearReward?.coins ? `보상 🪙${stage.clearReward.coins}` : ''}</div>
+      `;
+      if (unlocked) row.addEventListener('click', () => onEnter(stage.id));
+      this.stageListEl.appendChild(row);
+    }
+  }
+
+  _buildShopPanel() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: absolute; inset: 0; background: rgba(5,5,10,0.75);
+      display: none; align-items: center; justify-content: center; z-index: 10;
+    `;
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background: #1b1b26; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      padding: 24px 28px; width: 640px; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+      color: #fff; font-family: inherit; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    `;
+    panel.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <div style="font-size:18px; font-weight:700;">상점 · 꾸미기</div>
+        <span id="shopCoins" style="font-size:14px; color:#ffd166; font-weight:700;">🪙 0</span>
+      </div>
+      <div id="shopGrid" style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 14px;"></div>
+      <div style="margin-top:14px; font-size:12px; color:#8a8a9a;">코스메틱은 겉모습만 바꿉니다 — 전투력에는 영향이 없어요. 닫으려면 바깥을 클릭하세요</div>
+    `;
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this.toggleShop(false);
+    });
+    this.root.appendChild(overlay);
+    this.shopEl = overlay;
+    this.shopCoinsEl = panel.querySelector('#shopCoins');
+    this.shopGridEl = panel.querySelector('#shopGrid');
+    this.shopOpen = false;
+  }
+
+  toggleShop(open = !this.shopOpen) {
+    this.shopOpen = open;
+    this.shopEl.style.display = open ? 'flex' : 'none';
+  }
+
+  renderShopPanel(shopState, items, onBuy, onEquip) {
+    this.shopCoinsEl.textContent = `🪙 ${shopState.coins}`;
+    this.shopGridEl.innerHTML = '';
+    for (const item of items) {
+      const owned = shopState.isOwned(item.id);
+      const equipped = shopState.equipped[item.slot] === item.id;
+      const canAfford = shopState.canAfford(item);
+      const card = document.createElement('div');
+      card.style.cssText = `
+        background: ${equipped ? '#2f6f4f' : '#242430'}; border: 1px solid ${equipped ? '#4fd18a' : 'rgba(255,255,255,0.1)'};
+        border-radius: 8px; padding: 10px; display:flex; flex-direction:column; gap:6px; align-items:center;
+      `;
+      const swatch = document.createElement('div');
+      swatch.style.cssText = `
+        width: 36px; height: 36px; border-radius: 50%;
+        background: #${item.color.toString(16).padStart(6, '0')};
+        box-shadow: 0 0 10px #${(item.emissive ?? item.color).toString(16).padStart(6, '0')};
+      `;
+      card.appendChild(swatch);
+      const name = document.createElement('div');
+      name.style.cssText = 'font-size:12px; font-weight:700; text-align:center;';
+      name.textContent = item.name;
+      card.appendChild(name);
+
+      const btn = document.createElement('button');
+      btn.style.cssText = `
+        font-size:11px; padding:5px 10px; border-radius:6px; border:none; cursor:pointer;
+        background: ${equipped ? '#4fd18a' : owned ? '#3a6ea5' : canAfford ? '#a5843a' : '#3a3a4a'};
+        color: #fff;
+      `;
+      if (equipped) {
+        btn.textContent = '장착중';
+        btn.disabled = true;
+      } else if (owned) {
+        btn.textContent = '장착하기';
+        btn.addEventListener('click', () => onEquip(item.id));
+      } else {
+        btn.textContent = `구매 🪙${item.price}`;
+        btn.disabled = !canAfford;
+        if (canAfford) btn.addEventListener('click', () => onBuy(item.id));
+      }
+      card.appendChild(btn);
+      this.shopGridEl.appendChild(card);
+    }
   }
 
   _buildDeathScreen() {
@@ -292,6 +493,7 @@ export class UI {
   }
 
   updateBossBars(bosses) {
+    const seen = new Set(bosses);
     for (let i = 0; i < bosses.length; i++) {
       const boss = bosses[i];
       const engaged = boss.state !== 'guard' || boss.isDead;
@@ -313,6 +515,13 @@ export class UI {
       }
       row.nameEl.textContent = `${boss.name}${boss.phase3 ? ' — 폭주' : boss.phase2 ? ' — 격노' : ''}`;
       row.fillEl.style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100)}%`;
+    }
+    // 스테이지 전환 시 이전 스테이지 보스의 체력바 잔재가 남지 않도록 정리
+    for (const [boss, row] of this.bossBarRows) {
+      if (!seen.has(boss)) {
+        row.root.remove();
+        this.bossBarRows.delete(boss);
+      }
     }
   }
 

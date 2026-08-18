@@ -35,6 +35,15 @@ const KIND_PRESETS = {
     maxHp: 130, moveSpeed: 2.1, damage: 14, xpReward: 45,
     aggroRange: 9, attackRange: 2.1, attackCooldown: 1.8, hitRadius: 1.2,
   },
+  // 동굴 스테이지 전용 — 초원보다 한 단계 위 난이도
+  spider: {
+    maxHp: 34, moveSpeed: 4.8, damage: 7, xpReward: 26,
+    aggroRange: 11, attackRange: 1.4, attackCooldown: 0.85, hitRadius: 0.5,
+  },
+  wraith: {
+    maxHp: 40, moveSpeed: 2.3, damage: 8, xpReward: 30, hitRadius: 0.55,
+    aggroRange: 13, shootRange: 9, projectileSpeed: 10, shootCooldown: 1.7,
+  },
 };
 
 export class Enemy {
@@ -169,6 +178,8 @@ export class Enemy {
 
     if (this.kind === 'vine') {
       this.updateVine(dt, distToPlayer, px, pz);
+    } else if (this.kind === 'wraith') {
+      this.updateWraith(dt, distToPlayer, px, pz);
     } else if (this.kind === 'boar') {
       this.updateBoar(dt, playerGroup, onAttackPlayer, distToPlayer, px, pz);
     } else {
@@ -332,6 +343,19 @@ export class Enemy {
     }
   }
 
+  // 부유하며 거리 조절 후 저격하는 유령형 AI (wraith) — 고정형 vine과 달리 서서히 다가와 사거리를 맞춤
+  updateWraith(dt, distToPlayer, px, pz) {
+    if (this.shootTimer > 0) this.shootTimer -= dt;
+    if (distToPlayer >= this.aggroRange) return;
+    this.faceToward(px, pz);
+    if (distToPlayer > this.cfg.shootRange) {
+      this.moveToward(px, pz, dt, 0.6);
+    } else if (this.shootTimer <= 0) {
+      this.spawnProjectile(px, pz);
+      this.shootTimer = this.cfg.shootCooldown;
+    }
+  }
+
   spawnProjectile(px, pz) {
     const dx = px - this.group.position.x;
     const dz = pz - this.group.position.z;
@@ -403,6 +427,10 @@ function buildEnemyMesh(kind) {
       return buildBatMesh();
     case 'golem':
       return buildGolemMesh();
+    case 'spider':
+      return buildSpiderMesh();
+    case 'wraith':
+      return buildWraithMesh();
     default:
       return buildHoundMesh();
   }
@@ -533,6 +561,82 @@ function buildBoarMesh() {
 
   group.userData.bodyMat = bodyMat;
   group.userData.legPivots = legPivots;
+  return group;
+}
+
+// 동굴 스테이지 — 낮고 빠른 8족 거미형
+function buildSpiderMesh() {
+  const group = new THREE.Group();
+
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1c1620, flatShading: true });
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), bodyMat);
+  body.scale.set(1.1, 0.7, 1.3);
+  body.position.y = 0.4;
+  body.castShadow = true;
+  group.add(body);
+
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x8fffea, emissive: 0x4fe0c0, emissiveIntensity: 1.3 });
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), eyeMat);
+    eye.position.set(side * 0.14, 0.5, 0.34);
+    group.add(eye);
+  }
+
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x120e16, flatShading: true });
+  const legPivots = [];
+  const legSpecs = [
+    { x: -0.3, z: 0.22, phase: 0 }, { x: 0.3, z: 0.22, phase: Math.PI },
+    { x: -0.34, z: -0.02, phase: Math.PI }, { x: 0.34, z: -0.02, phase: 0 },
+    { x: -0.3, z: -0.26, phase: 0 }, { x: 0.3, z: -0.26, phase: Math.PI },
+    { x: -0.24, z: -0.46, phase: Math.PI }, { x: 0.24, z: -0.46, phase: 0 },
+  ];
+  for (const spec of legSpecs) {
+    const legMesh = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.5, 4), legMat);
+    legMesh.rotation.z = Math.PI / 2.4;
+    legMesh.castShadow = true;
+    const pivot = makeLimbPivot(group, spec.x, 0.4, spec.z, legMesh, 0);
+    legPivots.push({ pivot, phase: spec.phase });
+  }
+
+  group.userData.bodyMat = bodyMat;
+  group.userData.legPivots = legPivots;
+  return group;
+}
+
+// 동굴 스테이지 — 반투명 부유형 원거리 유령
+function buildWraithMesh() {
+  const group = new THREE.Group();
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x3fa7c9, emissive: 0x1c6f8c, emissiveIntensity: 0.8, flatShading: true,
+    transparent: true, opacity: 0.72,
+  });
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), bodyMat);
+  body.scale.set(1, 1.3, 1);
+  body.position.y = 0.9;
+  body.castShadow = true;
+  group.add(body);
+
+  const tailMat = new THREE.MeshStandardMaterial({
+    color: 0x2a7f9c, transparent: true, opacity: 0.4, flatShading: true, side: THREE.DoubleSide,
+  });
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.7, 5, 1, true), tailMat);
+  tail.rotation.x = Math.PI;
+  tail.position.y = 0.5;
+  group.add(tail);
+
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xeafcff, emissive: 0xaef0ff, emissiveIntensity: 1.4 });
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), eyeMat);
+    eye.position.set(side * 0.13, 0.95, 0.32);
+    group.add(eye);
+  }
+
+  const light = new THREE.PointLight(0x3fa7c9, 0.9, 6);
+  light.position.y = 0.9;
+  group.add(light);
+
+  group.userData.bodyMat = bodyMat;
   return group;
 }
 

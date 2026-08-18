@@ -61,6 +61,21 @@ export class Player {
     this.hasSpecial5 = false;
   }
 
+  // 상점에서 구매/장착한 코스메틱을 반영 — 전투 스탯에는 영향 없이 겉모습(색상)만 갈아끼움
+  applyCosmetics(cosmetics = {}) {
+    const rig = this.group.userData;
+    if (cosmetics.trimColor != null) {
+      rig.trimMat.color.setHex(cosmetics.trimColor);
+      rig.trimMat.emissive.setHex(cosmetics.trimEmissive ?? cosmetics.trimColor);
+    }
+    if (cosmetics.capeColor != null) rig.capeMat.color.setHex(cosmetics.capeColor);
+    if (cosmetics.capeColor2 != null) rig.capeMat2.color.setHex(cosmetics.capeColor2);
+    if (cosmetics.weaponColor != null) {
+      rig.bladeMat.color.setHex(cosmetics.weaponColor);
+      rig.bladeMat.emissive.setHex(cosmetics.weaponEmissive ?? cosmetics.weaponColor);
+    }
+  }
+
   recalcStats(skillState) {
     const prevMax = this.maxHp;
     this.maxHp = this.baseMaxHp
@@ -514,6 +529,12 @@ function buildPlayerMesh() {
   }
   rig.legPivotL = legPivots[-1];
   rig.legPivotR = legPivots[1];
+
+  // 커스터마이징(상점 코스메틱)이 색만 바꿔 끼울 수 있도록 관련 머티리얼을 노출
+  rig.trimMat = trimMat;
+  rig.capeMat = capeMat;
+  rig.capeMat2 = capeMat2;
+  rig.bladeMat = bladeMat;
 
   return group;
 }

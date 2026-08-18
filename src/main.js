@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import {
   createWorld,
+  createHubWorld,
+  createPlainsWorld,
+  createCaveWorld,
   WORLD_RADIUS,
   FINAL_BOSS_POS,
   COLOSSEUM_ENTRANCE_ANGLE,
@@ -11,17 +14,37 @@ import {
 } from './world.js';
 import { Player } from './player.js';
 import { Enemy } from './enemy.js';
-import { Boss, SporeQueen, CorruptedBear } from './boss.js';
+import { Boss, SporeQueen, CorruptedBear, CaveTyrant } from './boss.js';
 import { SkillTreeState } from './skillTree.js';
 import { Input } from './input.js';
 import { UI } from './ui.js';
 import { AuthScreen } from './authScreen.js';
 import { supabase } from './supabaseClient.js';
 import { loadSave, saveProgress } from './save.js';
+import { STAGES, getStage, isStageUnlocked } from './stages.js';
+import { ShopState, COSMETIC_ITEMS, resolveCosmetics } from './shop.js';
 
 const SKILL_KEYS = ['KeyQ', 'KeyE', 'Space', 'KeyR'];
 
 const appEl = document.getElementById('app');
+
+function createBossByKind(kind, scene, pos) {
+  if (kind === 'caveTyrant') return new CaveTyrant(scene, pos);
+  throw new Error(`알 수 없는 보스 종류: ${kind}`);
+}
+
+// 콜로세움 몬스터/최종 보스는 결계가 풀려 활동을 시작해도 콜로세움 경계 밖으로는 나갈 수 없음
+function containInColosseum(entity) {
+  const dx = entity.group.position.x - FINAL_BOSS_POS.x;
+  const dz = entity.group.position.z - FINAL_BOSS_POS.z;
+  const dist = Math.hypot(dx, dz);
+  const maxDist = COLOSSEUM_RADIUS - 2;
+  if (dist > maxDist) {
+    const scale = maxDist / (dist || 0.001);
+    entity.group.position.x = FINAL_BOSS_POS.x + dx * scale;
+    entity.group.position.z = FINAL_BOSS_POS.z + dz * scale;
+  }
+}
 
 async function main() {
   const authScreen = new AuthScreen(appEl);
@@ -39,71 +62,26 @@ async function main() {
   const cameraOffset = new THREE.Vector3(0, 5.5, 19);
   const cameraTarget = new THREE.Vector3();
 
-  const { scene, update: updateWorld, purify: purifyWorld, setOuterGateLocked, setInnerGateLocked } = createWorld();
-
   const input = new Input(renderer.domElement);
   const skillState = new SkillTreeState();
+  const shopState = new ShopState();
 
-  const player = new Player(scene);
+  const ui = new UI(appEl);
+  ui.buildAccountBar(user.user_metadata?.username || user.email, () => {
+    supabase.auth.signOut().then(() => window.location.reload());
+  });
+
+  // Player는 세션 내내 유지되는 단일 인스턴스 — 생성 시점엔 아무 씬이나 넘기고,
+  // 실제 표시될 씬(허브/스테이지)에는 각 진입 함수가 player.group을 재부착한다.
+  const player = new Player(new THREE.Scene());
   player.recalcStats(skillState);
 
-  // 콜로세움 내부 배치 — 입구(진입 방향) 쪽 반원에 몬스터를 펼쳐 놓아 도달 가능하게 함
-  const COLOSSEUM_MONSTER_RADIUS = 22;
-  function colosseumSpawnAt(angleOffset) {
-    const a = COLOSSEUM_ENTRANCE_ANGLE + angleOffset;
-    return new THREE.Vector3(
-      FINAL_BOSS_POS.x + Math.cos(a) * COLOSSEUM_MONSTER_RADIUS,
-      0,
-      FINAL_BOSS_POS.z + Math.sin(a) * COLOSSEUM_MONSTER_RADIUS
-    );
-  }
-
-  function spawnEnemies(scene) {
-    const list = [];
-    const spawns = [
-      { pos: [10, -10], kind: 'hound' },
-      { pos: [-14, 6], kind: 'hound' },
-      { pos: [18, 14], kind: 'bat' },
-      { pos: [-6, -20], kind: 'boar' },
-      { pos: [24, -6], kind: 'vine' },
-      { pos: [8, 22], kind: 'bat' },
-      { pos: [-45, -45], kind: 'golem' }, // 타락 지대
-      { pos: [-38, -52], kind: 'boar' },
-      { pos: [-52, -36], kind: 'vine' },
-    ];
-    for (const { pos: [x, z], kind } of spawns) {
-      const enemy = new Enemy(scene, new THREE.Vector3(x, 0, z), { kind });
-      list.push(enemy);
-    }
-    return list;
-  }
-
-  const enemies = spawnEnemies(scene);
-  const runeGuardian = new Boss(scene, colosseumSpawnAt(-0.9));
-  const sporeQueen = new SporeQueen(scene, colosseumSpawnAt(-0.3));
-  const colosseumGolem1 = new Enemy(scene, colosseumSpawnAt(0.3), { kind: 'golem' });
-  const colosseumGolem2 = new Enemy(scene, colosseumSpawnAt(0.9), { kind: 'golem' });
-  enemies.push(colosseumGolem1, colosseumGolem2);
-  const colosseumMonsters = [runeGuardian, sporeQueen, colosseumGolem1, colosseumGolem2];
-
-  const finalBoss = new CorruptedBear(scene, new THREE.Vector3(FINAL_BOSS_POS.x, 0, FINAL_BOSS_POS.z));
-  const bosses = [runeGuardian, sporeQueen, finalBoss];
-  const allTargets = [...enemies, ...bosses];
-
-  // 처치 상태를 저장/복원하기 위한 식별자 — 콜로세움 골렘은 의도적으로 리스폰하는 잡몹이라 제외
-  runeGuardian.saveId = 'runeGuardian';
-  sporeQueen.saveId = 'sporeQueen';
-  finalBoss.saveId = 'finalBoss';
-  const persistentBosses = [runeGuardian, sporeQueen, finalBoss];
+  // 'corrupt' 스테이지(콜로세움+성) 전용 지속 상태 — 세션 내내 유지되어야 하는 값들
   const defeatedBossIds = new Set();
   let colosseumCleared = false;
   let victoryTriggered = false;
 
-  const ui = new UI(appEl);
-  ui.updateHUD(player);
-  ui.buildAccountBar(user.user_metadata?.username || user.email, () => {
-    supabase.auth.signOut().then(() => window.location.reload());
-  });
+  const clearedStages = new Set();
 
   let saveDirty = false;
   function markDirty() {
@@ -121,6 +99,10 @@ async function main() {
       allocatedSkills: Array.from(skillState.allocated),
       defeatedBosses: Array.from(defeatedBossIds),
       colosseumCleared,
+      coins: shopState.coins,
+      clearedStages: Array.from(clearedStages),
+      ownedCosmetics: Array.from(shopState.owned),
+      equippedCosmetics: shopState.equipped,
     });
   }
   setInterval(() => flushSave(), 5000);
@@ -133,24 +115,14 @@ async function main() {
   if (existingSave) {
     skillState.loadState(existingSave);
     player.loadProgress(existingSave, skillState);
-
-    // 이전 세션에서 이미 처치한 보스는 애니메이션 없이 즉시 죽은 상태로 복원 (재접속 시 부활 방지)
-    for (const id of existingSave.defeated_bosses ?? []) {
-      defeatedBossIds.add(id);
-      persistentBosses.find((b) => b.saveId === id)?.forceKill();
-    }
+    shopState.loadState(existingSave);
+    for (const id of existingSave.cleared_stages ?? []) clearedStages.add(id);
+    for (const id of existingSave.defeated_bosses ?? []) defeatedBossIds.add(id);
     if (existingSave.colosseum_cleared) colosseumCleared = true;
-
-    // 이전 세션에서 이미 최종 보스를 처치했다면, 재접속할 때마다 승리 연출이 반복 재생되지 않도록
-    // 정화 애니메이션만 완료 상태로 건너뛰고 승리 화면은 다시 띄우지 않음
-    if (finalBoss.isDead) {
-      victoryTriggered = true;
-      purifyWorld();
-      updateWorld(999);
-    }
   } else {
     await flushSave(true);
   }
+  player.applyCosmetics(resolveCosmetics(shopState.equipped));
 
   function onAllocate(branchKey, nodeId) {
     if (skillState.allocate(branchKey, nodeId)) {
@@ -167,6 +139,40 @@ async function main() {
     markDirty();
   }
 
+  function onBuyItem(id) {
+    if (shopState.buy(id)) {
+      shopState.equip(id); // 구매 즉시 장착 (구매=꾸미기)
+      player.applyCosmetics(resolveCosmetics(shopState.equipped));
+      markDirty();
+      ui.renderShopPanel(shopState, COSMETIC_ITEMS, onBuyItem, onEquipItem);
+      ui.updateCoins(shopState.coins);
+    }
+  }
+
+  function onEquipItem(id) {
+    if (shopState.equip(id)) {
+      player.applyCosmetics(resolveCosmetics(shopState.equipped));
+      markDirty();
+      ui.renderShopPanel(shopState, COSMETIC_ITEMS, onBuyItem, onEquipItem);
+    }
+  }
+
+  ui.hubStageBtn.addEventListener('click', () => {
+    ui.renderStageSelect(
+      STAGES,
+      (stage) => isStageUnlocked(stage, { level: player.level, clearedStages: Array.from(clearedStages) }),
+      (stageId) => {
+        ui.toggleStageSelect(false);
+        enterStage(stageId);
+      }
+    );
+    ui.toggleStageSelect(true);
+  });
+  ui.hubShopBtn.addEventListener('click', () => {
+    ui.renderShopPanel(shopState, COSMETIC_ITEMS, onBuyItem, onEquipItem);
+    ui.toggleShop(true);
+  });
+
   function handleSpecialProc(hits) {
     if (!hits || hits.length === 0) return;
     const elemMult = player.elementalDmgMult;
@@ -181,107 +187,180 @@ async function main() {
       }
     }
     if (skillState.hasNode('special_3')) {
-      player.chainLightning(hits, allTargets);
+      player.chainLightning(hits, ctx.allTargets);
     }
   }
 
-  function grantXpForKills() {
-    for (const enemy of enemies) {
-      if (enemy.isDead && !enemy.xpGranted) {
-        enemy.xpGranted = true;
-        player.gainXp(enemy.xpReward, skillState);
-        markDirty();
+  function snapCamera() {
+    camera.position.set(
+      player.group.position.x + cameraOffset.x,
+      player.group.position.y + cameraOffset.y,
+      player.group.position.z + cameraOffset.z
+    );
+    camera.lookAt(player.group.position.x, player.group.position.y + 1.2, player.group.position.z);
+  }
+
+  // 현재 활성 씬/전투 상태 — 허브<->스테이지 전환마다 통째로 교체됨
+  let ctx = null;
+
+  function goToHub() {
+    const world = createHubWorld();
+    world.scene.add(player.group);
+    player.group.position.set(0, 0, 8);
+    ctx = {
+      mode: 'hub', scene: world.scene, updateWorld: world.update, radius: world.radius,
+      enemies: [], bosses: [], allTargets: [],
+    };
+    ui.setHubBarVisible(true);
+    ui.setGateHint(null);
+    snapCamera();
+  }
+
+  // 초원(plains) / 동굴(cave) 등 데이터 기반 일반 스테이지 입장
+  function enterGenericStage(stageId) {
+    const stage = getStage(stageId);
+    const builder = stageId === 'cave' ? createCaveWorld : createPlainsWorld;
+    const world = builder();
+    world.scene.add(player.group);
+    player.group.position.set(0, 0, stageId === 'cave' ? 20 : 8);
+
+    const enemies = stage.enemySpawns.map(
+      ({ pos: [x, z], kind }) => new Enemy(world.scene, new THREE.Vector3(x, 0, z), { kind })
+    );
+    const bosses = stage.bosses.map(
+      ({ kind, pos: [x, z] }) => createBossByKind(kind, world.scene, new THREE.Vector3(x, 0, z))
+    );
+    const allTargets = [...enemies, ...bosses];
+
+    ctx = {
+      mode: 'stage', stageId, scene: world.scene, updateWorld: world.update, radius: world.radius,
+      enemies, bosses, allTargets, cleared: false,
+      // 몬스터가 리스폰하더라도 "한 번씩은 다 잡았다"를 놓치지 않도록 개별 처치 여부를 별도로 추적
+      enemyKilled: new Array(enemies.length).fill(false),
+      bossKilled: new Array(bosses.length).fill(false),
+    };
+    ui.setHubBarVisible(false);
+    ui.setGateHint(null);
+    snapCamera();
+  }
+
+  function tickGenericStage(dt) {
+    for (let i = 0; i < ctx.enemies.length; i++) {
+      const enemy = ctx.enemies[i];
+      if (enemy.isDead) {
+        if (!ctx.enemyKilled[i]) ctx.enemyKilled[i] = true;
+        if (!enemy.xpGranted) {
+          enemy.xpGranted = true;
+          player.gainXp(enemy.xpReward, skillState);
+          markDirty();
+        }
       }
     }
-    for (const boss of bosses) {
-      if (boss.isDead && !boss.xpGranted) {
-        boss.xpGranted = true;
-        player.gainXp(boss.xpReward, skillState);
-        if (boss.saveId) defeatedBossIds.add(boss.saveId);
-        markDirty();
+    for (let i = 0; i < ctx.bosses.length; i++) {
+      const boss = ctx.bosses[i];
+      if (boss.isDead) {
+        if (!ctx.bossKilled[i]) ctx.bossKilled[i] = true;
+        if (!boss.xpGranted) {
+          boss.xpGranted = true;
+          player.gainXp(boss.xpReward, skillState);
+          markDirty();
+        }
       }
     }
-  }
-
-  // 콜로세움 몬스터/최종 보스는 결계가 풀려 활동을 시작해도 콜로세움 경계 밖으로는 나갈 수 없음
-  function containInColosseum(entity) {
-    const dx = entity.group.position.x - FINAL_BOSS_POS.x;
-    const dz = entity.group.position.z - FINAL_BOSS_POS.z;
-    const dist = Math.hypot(dx, dz);
-    const maxDist = COLOSSEUM_RADIUS - 2;
-    if (dist > maxDist) {
-      const scale = maxDist / (dist || 0.001);
-      entity.group.position.x = FINAL_BOSS_POS.x + dx * scale;
-      entity.group.position.z = FINAL_BOSS_POS.z + dz * scale;
-    }
-  }
-
-  function checkColosseumCleared() {
-    // 한 번 클리어되면 이후 골렘이 리스폰하더라도 성 진입 결계가 다시 잠기지 않도록 래치
-    if (!colosseumCleared && colosseumMonsters.every((m) => m.isDead)) {
-      colosseumCleared = true;
+    if (!ctx.cleared && ctx.enemyKilled.every(Boolean) && ctx.bossKilled.every(Boolean)) {
+      ctx.cleared = true;
+      const stage = getStage(ctx.stageId);
+      const reward = stage.clearReward?.coins ?? 0;
+      shopState.addCoins(reward);
+      clearedStages.add(ctx.stageId);
       markDirty();
+      flushSave(true);
+      ui.showStageCleared(stage.name, reward);
+      const clearedStageId = ctx.stageId;
+      setTimeout(() => {
+        if (ctx.stageId === clearedStageId) goToHub();
+      }, 1800);
     }
   }
 
-  function checkVictory() {
-    if (victoryTriggered) return;
+  // '타락지대 · 성' 스테이지 — 기존 콜로세움+최종보스 로직을 그대로 이식 (검증된 흐름이라 변경 없이 재사용)
+  function enterCorruptStage() {
+    const world = createWorld();
+    world.scene.add(player.group);
+    const spawnR = OUTER_GATE_RADIUS + 8;
+    player.group.position.set(
+      FINAL_BOSS_POS.x + Math.cos(COLOSSEUM_ENTRANCE_ANGLE) * spawnR,
+      0,
+      FINAL_BOSS_POS.z + Math.sin(COLOSSEUM_ENTRANCE_ANGLE) * spawnR
+    );
+
+    function colosseumSpawnAt(angleOffset) {
+      const a = COLOSSEUM_ENTRANCE_ANGLE + angleOffset;
+      return new THREE.Vector3(
+        FINAL_BOSS_POS.x + Math.cos(a) * 22,
+        0,
+        FINAL_BOSS_POS.z + Math.sin(a) * 22
+      );
+    }
+
+    const runeGuardian = new Boss(world.scene, colosseumSpawnAt(-0.9));
+    const sporeQueen = new SporeQueen(world.scene, colosseumSpawnAt(-0.3));
+    const colosseumGolem1 = new Enemy(world.scene, colosseumSpawnAt(0.3), { kind: 'golem' });
+    const colosseumGolem2 = new Enemy(world.scene, colosseumSpawnAt(0.9), { kind: 'golem' });
+    const finalBoss = new CorruptedBear(world.scene, new THREE.Vector3(FINAL_BOSS_POS.x, 0, FINAL_BOSS_POS.z));
+
+    runeGuardian.saveId = 'runeGuardian';
+    sporeQueen.saveId = 'sporeQueen';
+    finalBoss.saveId = 'finalBoss';
+    const persistentBosses = [runeGuardian, sporeQueen, finalBoss];
+    for (const id of defeatedBossIds) persistentBosses.find((b) => b.saveId === id)?.forceKill();
+
+    const colosseumMonsters = [runeGuardian, sporeQueen, colosseumGolem1, colosseumGolem2];
+    const enemies = [colosseumGolem1, colosseumGolem2];
+    const bosses = [runeGuardian, sporeQueen, finalBoss];
+    const allTargets = [...enemies, ...bosses];
+
     if (finalBoss.isDead) {
       victoryTriggered = true;
-      purifyWorld();
-      ui.beginVictorySequence();
-      flushSave(true);
-    }
-  }
-
-  const clock = new THREE.Clock();
-
-  function animate() {
-    requestAnimationFrame(animate);
-    const dt = Math.min(clock.getDelta(), 0.05);
-
-    if (!ui.tutorialOpen && input.consumePanelToggle()) {
-      ui.toggleSkillPanel();
-      if (ui.panelOpen) ui.renderSkillPanel(skillState, onAllocate, onRespec);
+      world.purify();
+      world.update(999);
     }
 
-    checkColosseumCleared();
-    const outerGateLocked = player.level < REQUIRED_LEVEL;
-    const innerGateLocked = !colosseumCleared;
-    finalBoss.sealed = innerGateLocked;
-    for (const m of colosseumMonsters) m.sealed = outerGateLocked;
-    setOuterGateLocked(outerGateLocked);
-    setInnerGateLocked(innerGateLocked);
+    function tick(dt) {
+      const outerGateLocked = player.level < REQUIRED_LEVEL;
+      const innerGateLocked = !colosseumCleared;
+      finalBoss.sealed = innerGateLocked;
+      for (const m of colosseumMonsters) m.sealed = outerGateLocked;
+      world.setOuterGateLocked(outerGateLocked);
+      world.setInnerGateLocked(innerGateLocked);
 
-    // 스킬 트리 패널(또는 튜토리얼)이 열려 있는 동안은 전투/이동을 완전히 멈춰
-    // 뒤에서 몬스터에게 얻어맞는 일이 없도록 함
-    const paused = ui.isPaused();
+      for (const m of colosseumMonsters) containInColosseum(m);
+      containInColosseum(finalBoss);
 
-    if (!player.isDead) {
-      if (!paused) {
-        player.update(dt, input, skillState, WORLD_RADIUS, outerGateLocked, innerGateLocked);
-
-        if (input.consumeAttack() && player.canAttack()) {
-          const hits = player.meleeAttack(allTargets);
-          handleSpecialProc(hits);
+      if (!colosseumCleared && colosseumMonsters.every((m) => m.isDead)) {
+        colosseumCleared = true;
+        markDirty();
+      }
+      for (const enemy of enemies) {
+        if (enemy.isDead && !enemy.xpGranted) {
+          enemy.xpGranted = true;
+          player.gainXp(enemy.xpReward, skillState);
+          markDirty();
         }
-        for (const code of SKILL_KEYS) {
-          if (input.consumeSkill(code)) {
-            const result = player.useActiveSkill(code, skillState, allTargets);
-            if (result?.type === 'attack_6') handleSpecialProc(result.hits);
-          }
+      }
+      for (const boss of bosses) {
+        if (boss.isDead && !boss.xpGranted) {
+          boss.xpGranted = true;
+          player.gainXp(boss.xpReward, skillState);
+          if (boss.saveId) defeatedBossIds.add(boss.saveId);
+          markDirty();
         }
-
-        for (const enemy of enemies) {
-          enemy.update(dt, player.group, (dmg) => player.takeDamage(dmg));
-        }
-        for (const boss of bosses) {
-          boss.update(dt, player.group, (dmg) => player.takeDamage(dmg));
-        }
-        for (const m of colosseumMonsters) containInColosseum(m);
-        containInColosseum(finalBoss);
-        grantXpForKills();
-        checkVictory();
+      }
+      if (!victoryTriggered && finalBoss.isDead) {
+        victoryTriggered = true;
+        world.purify();
+        ui.beginVictorySequence();
+        flushSave(true);
       }
 
       const distToColosseum = Math.hypot(
@@ -295,11 +374,70 @@ async function main() {
         gateHintText = '봉인된 결계 — 콜로세움의 몬스터를 모두 처치해야 성으로 들어갈 수 있습니다';
       }
       ui.setGateHint(gateHintText);
+    }
+
+    ctx = {
+      mode: 'stage', stageId: 'corrupt', scene: world.scene, updateWorld: world.update, radius: WORLD_RADIUS,
+      enemies, bosses, allTargets, legacyTick: tick,
+    };
+    ui.setHubBarVisible(false);
+    snapCamera();
+  }
+
+  function enterStage(stageId) {
+    if (stageId === 'corrupt') enterCorruptStage();
+    else enterGenericStage(stageId);
+  }
+
+  goToHub();
+
+  const clock = new THREE.Clock();
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+
+    if (!ui.tutorialOpen && input.consumePanelToggle()) {
+      ui.toggleSkillPanel();
+      if (ui.panelOpen) ui.renderSkillPanel(skillState, onAllocate, onRespec);
+    }
+
+    const paused = ui.isPaused();
+
+    if (!player.isDead) {
+      if (!paused) {
+        // '타락지대 · 성' 스테이지에서만 의미가 있는 레벨/봉인 결계 — 다른 스테이지에서는 항상 열림
+        const outerGateLocked = ctx.stageId === 'corrupt' && player.level < REQUIRED_LEVEL;
+        const innerGateLocked = ctx.stageId === 'corrupt' && !colosseumCleared;
+        player.update(dt, input, skillState, ctx.radius, outerGateLocked, innerGateLocked);
+
+        const attacked = input.consumeAttack();
+        const skillsPressed = SKILL_KEYS.map((code) => input.consumeSkill(code));
+
+        if (ctx.mode === 'stage') {
+          if (attacked && player.canAttack()) {
+            const hits = player.meleeAttack(ctx.allTargets);
+            handleSpecialProc(hits);
+          }
+          SKILL_KEYS.forEach((code, i) => {
+            if (skillsPressed[i]) {
+              const result = player.useActiveSkill(code, skillState, ctx.allTargets);
+              if (result?.type === 'attack_6') handleSpecialProc(result.hits);
+            }
+          });
+
+          for (const enemy of ctx.enemies) enemy.update(dt, player.group, (dmg) => player.takeDamage(dmg));
+          for (const boss of ctx.bosses) boss.update(dt, player.group, (dmg) => player.takeDamage(dmg));
+
+          if (ctx.legacyTick) ctx.legacyTick(dt);
+          else tickGenericStage(dt);
+        }
+      }
     } else {
       ui.showDeathScreen();
     }
 
-    updateWorld(dt);
+    ctx.updateWorld(dt);
 
     // 카메라: 플레이어를 부드럽게 따라가는 고정 시점(회전 없이 위치만 추적)
     cameraTarget.set(
@@ -311,22 +449,15 @@ async function main() {
     camera.lookAt(player.group.position.x, player.group.position.y + 1.2, player.group.position.z);
 
     ui.updateHUD(player);
+    ui.updateCoins(shopState.coins);
     ui.setSkillPointNotice(skillState.skillPoints > 0 && !ui.panelOpen);
-    ui.updateEnemyBars(enemies, camera, renderer.domElement);
-    ui.updateBossBars(bosses);
+    ui.updateEnemyBars(ctx.enemies, camera, renderer.domElement);
+    ui.updateBossBars(ctx.bosses);
 
-    renderer.render(scene, camera);
+    renderer.render(ctx.scene, camera);
   }
 
-  // 시작 카메라 위치를 즉시 세팅 (첫 프레임 튐 방지)
-  camera.position.set(
-    player.group.position.x + cameraOffset.x,
-    player.group.position.y + cameraOffset.y,
-    player.group.position.z + cameraOffset.z
-  );
-  camera.lookAt(player.group.position);
-
-  window.__debug = { camera, scene, player };
+  window.__debug = { camera, get scene() { return ctx.scene; }, player, ctx: () => ctx };
   animate();
 
   window.addEventListener('resize', () => {
