@@ -15,6 +15,8 @@ const BASE_CRIT_CHANCE = 0.05;
 const BASE_CRIT_DAMAGE_MULT = 1.5;
 const DASH_INVULN_DURATION = 0.35;
 const CHAIN_RADIUS = 3.5;
+const SWING_DURATION = 0.26;
+const HEAVY_SWING_DURATION = 0.4;
 
 export class Player {
   constructor(scene) {
@@ -42,6 +44,10 @@ export class Player {
     this.dashTimer = 0;
     this.invulnTimer = 0;
     this.hitFlashTimer = 0;
+    this.attackSwingTimer = 0;
+    this.attackSwingDuration = SWING_DURATION;
+    this.animPhase = 0;
+    this.isMoving = false;
 
     this.attackCooldownMult = 1;
     this.skillCooldownMult = 1;
@@ -145,13 +151,15 @@ export class Player {
     if (this.hitFlashTimer > 0) this.hitFlashTimer -= dt;
     if (this.dashTimer > 0) this.dashTimer -= dt;
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
+    if (this.attackSwingTimer > 0) this.attackSwingTimer = Math.max(0, this.attackSwingTimer - dt);
     if (this.hpRegen > 0 && this.hp < this.maxHp) {
       this.hp = Math.min(this.maxHp, this.hp + this.hpRegen * dt);
     }
 
     const move = input.moveVector();
     const len = Math.hypot(move.x, move.z);
-    if (len > 0.001 && this.dashTimer <= 0) {
+    this.isMoving = len > 0.001 && this.dashTimer <= 0;
+    if (this.isMoving) {
       const nx = move.x / len;
       const nz = move.z / len;
       this.forward.x = nx;
@@ -196,6 +204,48 @@ export class Player {
     // 피격 플래시
     const bodyMat = this.group.userData.bodyMat;
     bodyMat.emissive.setHex(this.hitFlashTimer > 0 ? 0xff2222 : 0x000000);
+
+    this.animate(dt);
+  }
+
+  // 이동/공격/대시 상태를 팔다리·망토 피벗에 반영하는 절차적 애니메이션
+  animate(dt) {
+    const rig = this.group.userData;
+    if (!rig.torso) return;
+
+    const swinging = this.attackSwingTimer > 0;
+    const speedFactor = Math.min(1.6, this.moveSpeed / BASE_MOVE_SPEED);
+    this.animPhase += dt * (this.isMoving ? 7 * speedFactor : 2.4);
+
+    const bobAmount = this.isMoving ? 0.055 : 0.02;
+    rig.torso.position.y = rig.torsoBaseY + Math.sin(this.animPhase) * bobAmount;
+
+    const dashLean = this.dashTimer > 0 ? 0.55 : 0;
+    const moveLean = this.isMoving ? 0.14 : 0;
+    rig.torso.rotation.x = -(dashLean + moveLean);
+
+    const legSwing = this.isMoving ? Math.sin(this.animPhase) * 0.6 : 0;
+    rig.legPivotL.rotation.x = legSwing;
+    rig.legPivotR.rotation.x = -legSwing;
+
+    const offArmSwing = this.isMoving ? Math.sin(this.animPhase + Math.PI) * 0.42 : 0;
+    rig.armPivotOff.rotation.x = offArmSwing;
+
+    if (swinging) {
+      const dur = this.attackSwingDuration || SWING_DURATION;
+      const t = 1 - this.attackSwingTimer / dur; // 0 -> 1
+      const arc = Math.sin(Math.min(1, t) * Math.PI);
+      rig.armPivotWeapon.rotation.x = -1.9 * arc - 0.3;
+      rig.armPivotWeapon.rotation.z = arc * 0.6;
+      rig.weaponGroup.rotation.z = arc * -0.5;
+    } else {
+      rig.armPivotWeapon.rotation.x = -offArmSwing * 0.7 - 0.15;
+      rig.armPivotWeapon.rotation.z = 0;
+      rig.weaponGroup.rotation.z = 0;
+    }
+
+    const capeSway = this.isMoving ? 0.4 : 0.1;
+    rig.cape.rotation.x = 0.2 + capeSway + dashLean * 0.7 + Math.sin(this.animPhase * 0.5) * 0.05;
   }
 
   canAttack() {
@@ -204,6 +254,8 @@ export class Player {
 
   meleeAttack(enemies, damageMultiplier = 1) {
     this.attackCooldownTimer = ATTACK_COOLDOWN * this.attackCooldownMult;
+    this.attackSwingDuration = damageMultiplier > 1 ? HEAVY_SWING_DURATION : SWING_DURATION;
+    this.attackSwingTimer = this.attackSwingDuration;
     const hits = [];
     const lowHpBonus = this.hasSpecial5 && this.hp / this.maxHp <= 0.3 ? 1.25 : 1;
     for (const enemy of enemies) {
@@ -298,103 +350,170 @@ function lerpAngle(a, b, t) {
 
 function buildPlayerMesh() {
   const group = new THREE.Group();
+  const rig = group.userData;
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3a6ea5, flatShading: true });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.1, 0.6), bodyMat);
-  body.position.y = 0.95;
-  body.castShadow = true;
-  group.add(body);
+  // 몸통 — 각진 흉갑, 어두운 강철톤에 룬 시안 포인트로 대비를 줌
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x28405e, flatShading: true });
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.92, 1.15, 0.6), bodyMat);
+  const torsoBaseY = 1.02;
+  torso.position.y = torsoBaseY;
+  torso.castShadow = true;
+  group.add(torso);
+  rig.torso = torso;
+  rig.torsoBaseY = torsoBaseY;
+  rig.bodyMat = bodyMat;
 
-  // 어깨 갑옷 — 몸통에 볼륨감을 더함
-  const armorMat = new THREE.MeshStandardMaterial({ color: 0x2f5a8a, flatShading: true });
-  for (const side of [-1, 1]) {
-    const shoulder = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), armorMat);
-    shoulder.position.set(side * 0.52, 1.42, 0);
-    shoulder.scale.set(1, 0.85, 1);
-    shoulder.castShadow = true;
-    group.add(shoulder);
-  }
-
-  // 등 뒤로 드리운 망토 — 살짝 뒤로 기울여 이동감을 연출
-  const capeMat = new THREE.MeshStandardMaterial({
-    color: 0x27415f, flatShading: true, side: THREE.DoubleSide,
+  const trimMat = new THREE.MeshStandardMaterial({
+    color: 0x7ad9ff, emissive: 0x2fa9e0, emissiveIntensity: 0.9, flatShading: true,
   });
-  const cape = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.05, 4, 1, true), capeMat);
-  cape.rotation.x = Math.PI;
-  cape.rotation.y = Math.PI / 4;
-  cape.position.set(0, 0.95, -0.32);
-  cape.scale.set(1, 1, 0.5);
-  cape.castShadow = true;
+  const chestTrim = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.85, 0.02), trimMat);
+  chestTrim.position.set(0, torsoBaseY, 0.31);
+  group.add(chestTrim);
+
+  const armorMat = new THREE.MeshStandardMaterial({ color: 0x161f2c, flatShading: true });
+
+  // 등 뒤 이중 망토 — 뒤틀린 두 겹으로 이동/대시 시 확실히 나부끼는 실루엣을 만듦
+  const capeMat = new THREE.MeshStandardMaterial({ color: 0x12182a, flatShading: true, side: THREE.DoubleSide });
+  const capeMat2 = new THREE.MeshStandardMaterial({ color: 0x223a58, flatShading: true, side: THREE.DoubleSide });
+  const cape = new THREE.Group();
+  cape.position.set(0, 1.52, -0.34);
+  const capeBack = new THREE.Mesh(new THREE.ConeGeometry(0.46, 1.15, 4, 1, true), capeMat);
+  capeBack.rotation.x = Math.PI;
+  capeBack.rotation.y = Math.PI / 4;
+  capeBack.scale.set(1, 1, 0.42);
+  capeBack.castShadow = true;
+  cape.add(capeBack);
+  const capeInner = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.85, 4, 1, true), capeMat2);
+  capeInner.rotation.x = Math.PI;
+  capeInner.rotation.y = Math.PI / 4;
+  capeInner.scale.set(1, 1, 0.3);
+  capeInner.position.z = 0.03;
+  cape.add(capeInner);
+  cape.rotation.x = 0.2;
   group.add(cape);
+  rig.cape = cape;
 
-  // 허리 룬 벨트 — 은은하게 빛나는 장식
-  const beltMat = new THREE.MeshStandardMaterial({
-    color: 0x7ad9ff, emissive: 0x2fa9e0, emissiveIntensity: 0.8, flatShading: true,
-  });
-  const belt = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.045, 6, 12), beltMat);
+  // 허리 룬 벨트
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.045, 6, 12), trimMat);
   belt.rotation.x = Math.PI / 2;
-  belt.position.set(0, 0.55, 0);
+  belt.position.set(0, 0.56, 0);
   group.add(belt);
 
+  // 머리 — 두건형 후드 + 시안 룬 서클릿으로 얼굴에 초점을 주는 영웅형 실루엣
   const headMat = new THREE.MeshStandardMaterial({ color: 0xe8c39e, flatShading: true });
-  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.38, 0), headMat);
-  head.position.y = 1.85;
+  const headGroup = new THREE.Group();
+  headGroup.position.y = 1.92;
+  group.add(headGroup);
+
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.36, 0), headMat);
   head.castShadow = true;
-  group.add(head);
+  headGroup.add(head);
 
-  // 머리카락 — 실루엣에 개성을 더함
-  const hairMat = new THREE.MeshStandardMaterial({ color: 0x3f2e22, flatShading: true });
-  const hair = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), hairMat);
-  hair.scale.set(1.03, 0.62, 1.03);
-  hair.position.set(0, 2.06, -0.03);
-  hair.castShadow = true;
-  group.add(hair);
+  const hoodMat = new THREE.MeshStandardMaterial({ color: 0x1c2536, flatShading: true });
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.62, 5), hoodMat);
+  hood.position.set(0, 0.16, -0.08);
+  hood.rotation.x = -0.15;
+  hood.castShadow = true;
+  headGroup.add(hood);
 
-  const runeMat = new THREE.MeshStandardMaterial({
-    color: 0x7ad9ff,
-    emissive: 0x2fa9e0,
-    flatShading: true,
-  });
-  const rune = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), runeMat);
-  rune.position.set(0, 1.25, 0.35);
+  const circlet = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.03, 6, 12), trimMat);
+  circlet.rotation.x = Math.PI / 2;
+  circlet.position.set(0, 0.06, 0);
+  headGroup.add(circlet);
+
+  const noseMat = new THREE.MeshStandardMaterial({ color: 0xd9a066, flatShading: true });
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.3, 4), noseMat);
+  nose.rotation.x = Math.PI / 2;
+  nose.position.set(0, 0, 0.42);
+  headGroup.add(nose);
+
+  const rune = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), trimMat);
+  rune.position.set(0, 1.28, 0.33);
   group.add(rune);
 
   const runeLight = new THREE.PointLight(0x7ad9ff, 0.7, 4);
   runeLight.position.copy(rune.position);
   group.add(runeLight);
 
-  const noseMat = new THREE.MeshStandardMaterial({ color: 0xffd166, flatShading: true });
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.4, 4), noseMat);
-  nose.rotation.x = Math.PI / 2;
-  nose.position.set(0, 0.95, 0.5);
-  group.add(nose);
-
-  // 팔 — 몸통만 있던 실루엣을 보완
+  // 팔 — 어깨 피벗에 매달아 걷기/공격 스윙을 자연스럽게 돌릴 수 있도록 함
   const armMat = new THREE.MeshStandardMaterial({ color: 0xe8c39e, flatShading: true });
+  const shoulderY = 1.56;
+  const armPivots = {};
   for (const side of [-1, 1]) {
-    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.55, 2, 5), armMat);
-    arm.position.set(side * 0.58, 0.85, 0);
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 0.58, shoulderY, 0);
+    group.add(pivot);
+
+    const shoulder = new THREE.Mesh(new THREE.OctahedronGeometry(0.23, 0), armorMat);
+    shoulder.scale.set(1, 0.85, 1);
+    shoulder.castShadow = true;
+    pivot.add(shoulder);
+
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.48, 2, 5), armMat);
+    arm.position.y = -0.33;
     arm.castShadow = true;
-    group.add(arm);
-  }
+    pivot.add(arm);
 
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x2a2a35, flatShading: true });
+    armPivots[side] = pivot;
+  }
+  const WEAPON_SIDE = 1;
+  rig.armPivotOff = armPivots[-1];
+  rig.armPivotWeapon = armPivots[WEAPON_SIDE];
+
+  // 검 — 손 피벗에 매달아 공격 시 호를 그리며 베어냄
+  const bladeMat = new THREE.MeshStandardMaterial({
+    color: 0xdfe8f2, emissive: 0x6fc6f0, emissiveIntensity: 0.5, flatShading: true,
+  });
+  const gripMat = new THREE.MeshStandardMaterial({ color: 0x241a12, flatShading: true });
+  const guardMat = new THREE.MeshStandardMaterial({ color: 0x1c2836, flatShading: true });
+
+  const weaponGroup = new THREE.Group();
+  weaponGroup.position.set(0.02, -0.62, 0.03);
+  weaponGroup.rotation.x = 1.15;
+  weaponGroup.rotation.z = -0.1;
+  rig.armPivotWeapon.add(weaponGroup);
+  rig.weaponGroup = weaponGroup;
+
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.26, 6), gripMat);
+  weaponGroup.add(grip);
+  const pommel = new THREE.Mesh(new THREE.OctahedronGeometry(0.065, 0), trimMat);
+  pommel.position.y = -0.17;
+  weaponGroup.add(pommel);
+  const guard = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.08), guardMat);
+  guard.position.y = 0.16;
+  weaponGroup.add(guard);
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.92, 0.05), bladeMat);
+  blade.position.y = 0.16 + 0.46;
+  blade.castShadow = true;
+  weaponGroup.add(blade);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.26, 4), bladeMat);
+  tip.position.y = 0.16 + 0.92 + 0.13;
+  weaponGroup.add(tip);
+
+  // 다리 — 엉덩이 피벗으로 걷기 사이클을 구현
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x22222c, flatShading: true });
+  const bootMat = new THREE.MeshStandardMaterial({ color: 0x15151c, flatShading: true });
+  const hipY = 0.72;
+  const legPivots = {};
   for (const side of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.7, 0.35), legMat);
-    leg.position.set(side * 0.25, 0.35, 0);
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 0.26, hipY, 0);
+    group.add(pivot);
+
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.29, 0.68, 0.34), legMat);
+    leg.position.y = -0.34;
     leg.castShadow = true;
-    group.add(leg);
-  }
+    pivot.add(leg);
 
-  // 부츠 — 다리 아래쪽에 색 대비를 줘서 마무리
-  const bootMat = new THREE.MeshStandardMaterial({ color: 0x1c1c24, flatShading: true });
-  for (const side of [-1, 1]) {
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.4), bootMat);
-    boot.position.set(side * 0.25, 0.11, 0.03);
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.33, 0.22, 0.4), bootMat);
+    boot.position.set(0, -0.68, 0.03);
     boot.castShadow = true;
-    group.add(boot);
-  }
+    pivot.add(boot);
 
-  group.userData.bodyMat = bodyMat;
+    legPivots[side] = pivot;
+  }
+  rig.legPivotL = legPivots[-1];
+  rig.legPivotR = legPivots[1];
+
   return group;
 }

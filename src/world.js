@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 
-// 밝은 지역(평화)과 타락 지역의 이중 톤 색상 팔레트
+// 밝은 지역(평화)과 타락 지역의 이중 톤 색상 팔레트 — 황혼빛의 어둡고 분위기 있는 톤
 export const PALETTE = {
-  peaceSky: 0x8ec9e8,
-  peaceGround: 0x5fa35a,
-  corruptSky: 0x2a1f33,
-  corruptGround: 0x3a2f3a,
+  peaceSky: 0x3c4f7a,
+  peaceGround: 0x3f7a4a,
+  corruptSky: 0x140e1c,
+  corruptGround: 0x241c2e,
 };
 
 const CORRUPT_CENTER = { x: -45, z: -45 };
@@ -28,12 +28,13 @@ export const INNER_GATE_RADIUS = 18; // 봉인 결계 — 콜로세움 몬스터
 export function createWorld() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(PALETTE.peaceSky);
-  scene.fog = new THREE.Fog(PALETTE.peaceSky, 35, 175);
+  scene.fog = new THREE.Fog(PALETTE.peaceSky, 28, 148);
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x3a4a30, 0.8);
+  // 서늘한 달빛 앰비언트 + 따뜻한 저각 태양광의 대비로 황혼의 극적인 분위기를 연출
+  const hemi = new THREE.HemisphereLight(0x8fb0e0, 0x18220f, 0.55);
   scene.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xfff2d0, 1.65);
+  const sun = new THREE.DirectionalLight(0xffd9a0, 1.2);
   sun.position.set(25, 35, 15);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -175,7 +176,7 @@ export function createWorld() {
     crystals.push(spike); // 정화 시퀀스에서 함께 사그라들도록 기존 결정체 배열에 편입
   }
 
-  const arenaLight = new THREE.PointLight(0xb85fe0, 1.8, 45);
+  const arenaLight = new THREE.PointLight(0xb85fe0, 2.3, 45);
   arenaLight.position.set(FINAL_BOSS_POS.x, 6, FINAL_BOSS_POS.z);
   scene.add(arenaLight);
 
@@ -258,6 +259,40 @@ export function createWorld() {
     scene.add(mountain);
   }
 
+  // --- 별빛 하늘 + 달: 어두워진 황혼 세계관을 밤하늘로 마무리 ---
+  const starGeo = new THREE.BufferGeometry();
+  const starCount = 700;
+  const starPositions = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(Math.random() * 0.85); // 지평선보다 위쪽 하늘에 집중 분포
+    const r = 260;
+    starPositions[i * 3] = Math.cos(theta) * Math.sin(phi) * r;
+    starPositions[i * 3 + 1] = Math.cos(phi) * r * 0.6 + 60;
+    starPositions[i * 3 + 2] = Math.sin(theta) * Math.sin(phi) * r;
+  }
+  starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+  const starMat = new THREE.PointsMaterial({
+    color: 0xdfe8ff, size: 1.6, sizeAttenuation: false, transparent: true, opacity: 0.75, depthWrite: false,
+  });
+  const stars = new THREE.Points(starGeo, starMat);
+  scene.add(stars);
+
+  const moonAngle = CASTLE_ANGLE;
+  const moonPos = new THREE.Vector3(Math.cos(moonAngle) * 300, 135, Math.sin(moonAngle) * 300);
+  const moonHaloMat = new THREE.MeshBasicMaterial({
+    color: 0xb8c8ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const moonHalo = new THREE.Mesh(new THREE.CircleGeometry(24, 28), moonHaloMat);
+  moonHalo.position.copy(moonPos);
+  scene.add(moonHalo);
+  const moonMat = new THREE.MeshBasicMaterial({
+    color: 0xe6ecff, side: THREE.DoubleSide, depthWrite: false,
+  });
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(13, 28), moonMat);
+  moon.position.copy(moonPos);
+  scene.add(moon);
+
   // --- 구름 (부유, 서서히 이동) ---
   const clouds = [];
   for (let i = 0; i < 10; i++) {
@@ -291,7 +326,7 @@ export function createWorld() {
   // --- 타락 지대~콜로세움 상공의 먹구름 천장 + 지면 안개 (다크소울풍 음산한 분위기) ---
   const ATMOSPHERE_RADIUS = 75;
   const stormCeilingMat = new THREE.MeshBasicMaterial({
-    color: 0x241f30, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false,
+    color: 0x1a1422, transparent: true, opacity: 0.68, side: THREE.DoubleSide, depthWrite: false,
   });
   const stormCeiling = new THREE.Mesh(new THREE.CircleGeometry(ATMOSPHERE_RADIUS, 40), stormCeilingMat);
   stormCeiling.rotation.x = Math.PI / 2;
@@ -299,7 +334,7 @@ export function createWorld() {
   scene.add(stormCeiling);
 
   const groundFogMat = new THREE.MeshBasicMaterial({
-    color: 0x3a2f4a, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false,
+    color: 0x2a2036, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false,
   });
   const groundFog = new THREE.Mesh(new THREE.CircleGeometry(ATMOSPHERE_RADIUS, 40), groundFogMat);
   groundFog.rotation.x = -Math.PI / 2;
@@ -403,6 +438,9 @@ export function createWorld() {
     stormCeiling.rotation.z += dt * 0.01;
     groundFog.rotation.z -= dt * 0.006;
     groundFog.position.x = CORRUPT_CENTER.x + Math.sin(elapsed * 0.1) * 2;
+
+    stars.rotation.y += dt * 0.003;
+    starMat.opacity = 0.6 + Math.sin(elapsed * 0.6) * 0.15;
   }
 
   return { scene, update, purify, setOuterGateLocked, setInnerGateLocked };
@@ -649,6 +687,7 @@ function createCastle() {
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x120f18, flatShading: true });
 
   const baseY = 0; // 콜로세움 바닥에 그대로 서 있는 성 — 공중부양 없음
+  const outerWallParts = []; // 정화 완료 시 완전히 사라지는 바깥 성벽/탑 — 중앙 첨탑(보스 방)은 남겨둠
 
   // 성벽 기단 (지면에 밀착)
   const plinth = new THREE.Mesh(new THREE.CylinderGeometry(16, 18, 2, 10), darkStone);
@@ -656,6 +695,7 @@ function createCastle() {
   plinth.receiveShadow = true;
   plinth.castShadow = true;
   group.add(plinth);
+  outerWallParts.push(plinth);
 
   // 성벽 링 (군데군데 무너진 흉벽)
   const wallRadius = 15;
@@ -670,6 +710,7 @@ function createCastle() {
     wall.position.set(Math.cos(midAngle) * wallRadius, baseY + 4, Math.sin(midAngle) * wallRadius);
     wall.rotation.y = -midAngle + Math.PI / 2;
     group.add(wall);
+    outerWallParts.push(wall);
     for (let c = -1; c <= 1; c += 2) {
       const cren = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 1.6), stone);
       cren.position.set(
@@ -678,6 +719,7 @@ function createCastle() {
         wall.position.z + Math.sin(midAngle + Math.PI / 2) * segLen * 0.28 * c
       );
       group.add(cren);
+      outerWallParts.push(cren);
     }
   }
 
@@ -697,11 +739,13 @@ function createCastle() {
     tower.position.set(tx, baseY + t.height / 2, tz);
     if (t.broken) tower.rotation.z = (Math.random() - 0.5) * 0.18;
     group.add(tower);
+    outerWallParts.push(tower);
     if (!t.broken) {
       const roofH = t.height * 0.35;
       const roof = new THREE.Mesh(new THREE.ConeGeometry(t.radius * 1.3, roofH, 7), roofMat);
       roof.position.set(tx, baseY + t.height + roofH / 2, tz);
       group.add(roof);
+      outerWallParts.push(roof);
     }
     if (Math.random() < 0.5) {
       const win = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.7, 0.3), windowMat);
@@ -709,6 +753,7 @@ function createCastle() {
       win.position.set(tx * 1.05, wy, tz * 1.05);
       win.lookAt(0, wy, 0);
       group.add(win);
+      outerWallParts.push(win);
     }
   }
 

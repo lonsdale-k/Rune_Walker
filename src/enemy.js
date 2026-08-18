@@ -174,12 +174,38 @@ export class Enemy {
       this.updateChaser(dt, distToPlayer, px, pz, onAttackPlayer);
     }
 
+    this.animateMesh(dt);
+    this.updateProjectiles(dt, playerGroup, onAttackPlayer);
+  }
+
+  // 종류별 걷기/날갯짓/흔들림 애니메이션 — 빌드 시 group.userData에 심어둔 피벗들을 매 프레임 회전
+  animateMesh(dt) {
+    const ud = this.group.userData;
+    const moving = this.state === 'chase' || this.state === 'charging' || this.state === 'windup';
+
     if (this.kind === 'bat') {
-      this.bobPhase += dt * 6;
+      this.bobPhase += dt * 7;
       this.group.position.y = Math.sin(this.bobPhase) * 0.25 + 0.5;
+      if (ud.wingPivots) {
+        const flap = Math.sin(this.bobPhase * 1.4) * 0.85;
+        for (const { pivot, side } of ud.wingPivots) pivot.rotation.z = flap * side;
+      }
+      return;
     }
 
-    this.updateProjectiles(dt, playerGroup, onAttackPlayer);
+    this.bobPhase += dt * (moving ? 6 : 1.8);
+    if (ud.legPivots) {
+      const amp = moving ? 0.5 : 0.05;
+      for (const { pivot, phase } of ud.legPivots) pivot.rotation.x = Math.sin(this.bobPhase + phase) * amp;
+    }
+    if (ud.sway) {
+      ud.sway.rotation.z = Math.sin(this.bobPhase * 0.4) * 0.05;
+      ud.sway.rotation.x = Math.cos(this.bobPhase * 0.3) * 0.035;
+    }
+    if (ud.bulb) {
+      const windingUp = this.kind === 'vine' && this.shootTimer > 0 && this.shootTimer < 0.35;
+      ud.bulb.scale.setScalar(1 + Math.sin(this.bobPhase * 1.2) * 0.035 + (windingUp ? 0.12 : 0));
+    }
   }
 
   wanderStep(dt, distToPlayer) {
@@ -381,40 +407,72 @@ function buildEnemyMesh(kind) {
   }
 }
 
+// 다리/날개 등 관절 피벗을 만드는 공용 헬퍼 — pivot 위치(관절)에 그룹을 두고 그 아래로 메시를 localY만큼 늘어뜨림
+function makeLimbPivot(parent, x, y, z, mesh, localY) {
+  const pivot = new THREE.Group();
+  pivot.position.set(x, y, z);
+  mesh.position.y = localY;
+  pivot.add(mesh);
+  parent.add(pivot);
+  return pivot;
+}
+
 function buildHoundMesh() {
   const group = new THREE.Group();
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3d2a45, flatShading: true });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.7, 1.6), bodyMat);
-  body.position.y = 0.55;
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x362043, flatShading: true });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.62, 1.75), bodyMat);
+  body.position.y = 0.5;
   body.castShadow = true;
   group.add(body);
 
-  const headMat = new THREE.MeshStandardMaterial({ color: 0x2a1c33, flatShading: true });
-  const head = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.9, 5), headMat);
+  const spineMat = new THREE.MeshStandardMaterial({ color: 0x18101d, flatShading: true });
+  for (let i = 0; i < 4; i++) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.3 - i * 0.035, 4), spineMat);
+    spike.position.set(0, 0.85 - i * 0.02, 0.55 - i * 0.38);
+    spike.rotation.x = -0.3;
+    group.add(spike);
+  }
+
+  const headMat = new THREE.MeshStandardMaterial({ color: 0x241730, flatShading: true });
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.85, 5), headMat);
   head.rotation.x = Math.PI / 2;
-  head.position.set(0, 0.7, 1.0);
+  head.position.set(0, 0.62, 1.05);
   head.castShadow = true;
   group.add(head);
 
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244 });
+  const fangMat = new THREE.MeshStandardMaterial({ color: 0xe8e2d0, flatShading: true });
   for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.08, 6, 6), eyeMat);
-    eye.position.set(side * 0.18, 0.78, 1.35);
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.22, 4), fangMat);
+    fang.rotation.x = Math.PI;
+    fang.position.set(side * 0.13, 0.4, 1.46);
+    group.add(fang);
+  }
+
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 1.2 });
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.075, 6, 6), eyeMat);
+    eye.position.set(side * 0.16, 0.74, 1.37);
     group.add(eye);
   }
 
-  const legMat = new THREE.MeshStandardMaterial({ color: 0x241a2b, flatShading: true });
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.55, 0.22), legMat);
-      leg.position.set(sx * 0.4, 0.28, sz * 0.55);
-      leg.castShadow = true;
-      group.add(leg);
-    }
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x18101d, flatShading: true });
+  const legPivots = [];
+  const legSpecs = [
+    { x: -0.34, z: 0.58, phase: 0 },
+    { x: 0.34, z: 0.58, phase: Math.PI },
+    { x: -0.38, z: -0.6, phase: Math.PI },
+    { x: 0.38, z: -0.6, phase: 0 },
+  ];
+  for (const spec of legSpecs) {
+    const legMesh = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.5, 0.2), legMat);
+    legMesh.castShadow = true;
+    const pivot = makeLimbPivot(group, spec.x, 0.5, spec.z, legMesh, -0.25);
+    legPivots.push({ pivot, phase: spec.phase });
   }
 
   group.userData.bodyMat = bodyMat;
+  group.userData.legPivots = legPivots;
   return group;
 }
 
@@ -422,106 +480,155 @@ function buildBoarMesh() {
   const group = new THREE.Group();
 
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x4a2a3a, flatShading: true });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.9, 2.0), bodyMat);
-  body.position.y = 0.7;
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.95, 2.05), bodyMat);
+  body.position.y = 0.72;
   body.castShadow = true;
   group.add(body);
 
+  const armorMat = new THREE.MeshStandardMaterial({ color: 0x201220, flatShading: true });
+  for (let i = 0; i < 3; i++) {
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(0.98 - i * 0.14, 0.22, 0.4), armorMat);
+    plate.position.set(0, 1.18 - i * 0.02, 0.55 - i * 0.5);
+    plate.castShadow = true;
+    group.add(plate);
+  }
+
   const headMat = new THREE.MeshStandardMaterial({ color: 0x381f2c, flatShading: true });
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 0.8), headMat);
-  head.position.set(0, 0.75, 1.25);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.72, 0.82), headMat);
+  head.position.set(0, 0.76, 1.28);
   head.castShadow = true;
   group.add(head);
 
   const tuskMat = new THREE.MeshStandardMaterial({ color: 0xe8e2d0, flatShading: true });
   for (const side of [-1, 1]) {
-    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.45, 4), tuskMat);
-    tusk.rotation.x = Math.PI / 2.3;
-    tusk.position.set(side * 0.28, 0.5, 1.6);
+    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.58, 4), tuskMat);
+    tusk.rotation.x = Math.PI / 2.1;
+    tusk.rotation.z = side * 0.15;
+    tusk.position.set(side * 0.3, 0.48, 1.68);
     group.add(tusk);
   }
 
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244 });
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 1.2 });
   for (const side of [-1, 1]) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 6), eyeMat);
-    eye.position.set(side * 0.24, 0.9, 1.55);
+    eye.position.set(side * 0.24, 0.92, 1.58);
     group.add(eye);
   }
 
   const legMat = new THREE.MeshStandardMaterial({ color: 0x2a1722, flatShading: true });
-  for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.65, 0.3), legMat);
-      leg.position.set(sx * 0.55, 0.32, sz * 0.7);
-      leg.castShadow = true;
-      group.add(leg);
-    }
+  const legPivots = [];
+  const legSpecs = [
+    { x: -0.53, z: 0.66, phase: 0 },
+    { x: 0.53, z: 0.66, phase: Math.PI },
+    { x: -0.56, z: -0.68, phase: Math.PI },
+    { x: 0.56, z: -0.68, phase: 0 },
+  ];
+  for (const spec of legSpecs) {
+    const legMesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.62, 0.3), legMat);
+    legMesh.castShadow = true;
+    const pivot = makeLimbPivot(group, spec.x, 0.62, spec.z, legMesh, -0.31);
+    legPivots.push({ pivot, phase: spec.phase });
   }
 
   group.userData.bodyMat = bodyMat;
+  group.userData.legPivots = legPivots;
   return group;
 }
 
 function buildVineMesh() {
   const group = new THREE.Group();
 
-  const stalkMat = new THREE.MeshStandardMaterial({ color: 0x3a2545, flatShading: true });
-  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 1.3, 6), stalkMat);
-  stalk.position.y = 0.65;
+  const sway = new THREE.Group();
+  group.add(sway);
+
+  const stalkMat = new THREE.MeshStandardMaterial({ color: 0x2c1c38, flatShading: true });
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.3, 1.35, 6), stalkMat);
+  stalk.position.y = 0.68;
   stalk.castShadow = true;
-  group.add(stalk);
+  sway.add(stalk);
 
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x5a2f70, flatShading: true });
-  const bulb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), bodyMat);
-  bulb.position.y = 1.35;
-  bulb.castShadow = true;
-  group.add(bulb);
+  const bulb = new THREE.Group();
+  bulb.position.y = 1.4;
+  sway.add(bulb);
+  const bulbMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(0.44, 0), bodyMat);
+  bulbMesh.castShadow = true;
+  bulb.add(bulbMesh);
 
   const mawMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xaa1e33, flatShading: true });
-  const maw = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 6), mawMat);
-  maw.position.set(0, 1.35, 0.38);
-  group.add(maw);
+  const maw = new THREE.Mesh(new THREE.SphereGeometry(0.16, 6, 6), mawMat);
+  maw.position.set(0, 0, 0.4);
+  bulb.add(maw);
 
-  const spikeMat = new THREE.MeshStandardMaterial({ color: 0x2a1733, flatShading: true });
-  for (let i = 0; i < 4; i++) {
-    const angle = (i / 4) * Math.PI * 2;
-    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.4, 4), spikeMat);
-    spike.position.set(Math.cos(angle) * 0.35, 1.15, Math.sin(angle) * 0.35);
+  const toothMat = new THREE.MeshStandardMaterial({ color: 0xe8e2d0, flatShading: true });
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.13, 4), toothMat);
+    tooth.position.set(Math.cos(angle) * 0.15, Math.sin(angle) * 0.15, 0.42);
+    tooth.rotation.x = Math.PI / 2;
+    bulb.add(tooth);
+  }
+
+  const spikeMat = new THREE.MeshStandardMaterial({
+    color: 0x6a2fa0, emissive: 0x9b3fe0, emissiveIntensity: 0.5, flatShading: true,
+  });
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2;
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.42, 4), spikeMat);
+    spike.position.set(Math.cos(angle) * 0.36, 0, Math.sin(angle) * 0.36);
     spike.rotation.z = Math.cos(angle) * 0.6;
     spike.rotation.x = Math.sin(angle) * 0.6;
-    group.add(spike);
+    bulb.add(spike);
   }
 
   group.userData.bodyMat = bodyMat;
+  group.userData.sway = sway;
+  group.userData.bulb = bulb;
   return group;
 }
 
 function buildBatMesh() {
   const group = new THREE.Group();
 
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2e2138, flatShading: true });
-  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 0), bodyMat);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x261c30, flatShading: true });
+  const body = new THREE.Mesh(new THREE.IcosahedronGeometry(0.26, 0), bodyMat);
+  body.scale.set(1, 1.3, 1.6);
   body.position.y = 0.5;
   body.castShadow = true;
   group.add(body);
 
-  const wingMat = new THREE.MeshStandardMaterial({ color: 0x3d2a49, flatShading: true, side: THREE.DoubleSide });
+  const earMat = new THREE.MeshStandardMaterial({ color: 0x1c1424, flatShading: true });
   for (const side of [-1, 1]) {
-    const wing = new THREE.Mesh(new THREE.ConeGeometry(0.4, 0.15, 3), wingMat);
-    wing.rotation.z = (side * Math.PI) / 2;
-    wing.rotation.y = Math.PI / 2;
-    wing.position.set(side * 0.4, 0.5, 0);
-    group.add(wing);
+    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.22, 4), earMat);
+    ear.position.set(side * 0.1, 0.7, -0.06);
+    group.add(ear);
   }
 
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244 });
+  const wingMat = new THREE.MeshStandardMaterial({
+    color: 0x3d2a49, flatShading: true, side: THREE.DoubleSide, emissive: 0x2a1836, emissiveIntensity: 0.4,
+  });
+  const wingPivots = [];
+  for (const side of [-1, 1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 0.15, 0.55, 0);
+    group.add(pivot);
+    const wing = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.05, 3), wingMat);
+    wing.rotation.z = (side * Math.PI) / 2;
+    wing.rotation.y = Math.PI / 2;
+    wing.position.set(side * 0.46, 0, 0);
+    pivot.add(wing);
+    wingPivots.push({ pivot, side });
+  }
+
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0xff2244, emissiveIntensity: 1.2 });
   for (const side of [-1, 1]) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), eyeMat);
-    eye.position.set(side * 0.12, 0.55, 0.24);
+    eye.position.set(side * 0.11, 0.55, 0.24);
     group.add(eye);
   }
 
   group.userData.bodyMat = bodyMat;
+  group.userData.wingPivots = wingPivots;
   return group;
 }
 
@@ -530,26 +637,48 @@ function buildGolemMesh() {
 
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x342a3f, flatShading: true });
   const body = new THREE.Mesh(new THREE.DodecahedronGeometry(0.85, 0), bodyMat);
-  body.position.y = 0.95;
-  body.scale.set(1, 1.15, 0.9);
+  body.position.y = 1.0;
+  body.scale.set(1.05, 1.2, 0.95);
   body.castShadow = true;
   group.add(body);
 
-  const crystalMat = new THREE.MeshStandardMaterial({
-    color: 0x9b3fe0, emissive: 0x7a2fc0, emissiveIntensity: 0.8, flatShading: true,
+  const chunkMat = new THREE.MeshStandardMaterial({ color: 0x201a26, flatShading: true });
+  const chunkSpecs = [
+    [0.55, 1.35, 0.3, 0.3], [-0.5, 1.55, -0.15, 0.26], [0.15, 1.92, 0.35, 0.25], [-0.35, 1.05, 0.5, 0.24],
+  ];
+  for (const [x, y, z, s] of chunkSpecs) {
+    const chunk = new THREE.Mesh(new THREE.OctahedronGeometry(s, 0), chunkMat);
+    chunk.position.set(x, y, z);
+    chunk.rotation.set(Math.random(), Math.random(), Math.random());
+    chunk.castShadow = true;
+    group.add(chunk);
+  }
+
+  const crackMat = new THREE.MeshStandardMaterial({
+    color: 0x9b3fe0, emissive: 0xb85fe0, emissiveIntensity: 1.2, flatShading: true,
   });
-  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), crystalMat);
-  crystal.position.y = 1.55;
+  const crackSpecs = [[0.3, 1.3, 0.5, 0.4], [-0.25, 0.85, 0.45, -0.3], [0.1, 1.68, 0.4, 0.9]];
+  for (const [x, y, z, ry] of crackSpecs) {
+    const crack = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.32, 0.03), crackMat);
+    crack.position.set(x, y, z);
+    crack.rotation.y = ry;
+    group.add(crack);
+  }
+
+  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.3, 0), crackMat);
+  crystal.position.y = 1.68;
   group.add(crystal);
 
   const legMat = new THREE.MeshStandardMaterial({ color: 0x241c2c, flatShading: true });
+  const legPivots = [];
   for (const sx of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.75, 0.42), legMat);
-    leg.position.set(sx * 0.45, 0.38, 0);
-    leg.castShadow = true;
-    group.add(leg);
+    const legMesh = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.78, 0.44), legMat);
+    legMesh.castShadow = true;
+    const pivot = makeLimbPivot(group, sx * 0.46, 0.78, 0, legMesh, -0.39);
+    legPivots.push({ pivot, phase: sx > 0 ? Math.PI : 0 });
   }
 
   group.userData.bodyMat = bodyMat;
+  group.userData.legPivots = legPivots;
   return group;
 }
