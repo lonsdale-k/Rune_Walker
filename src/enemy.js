@@ -14,25 +14,25 @@ const RESPAWN_DELAY = 10;
 const KIND_PRESETS = {
   hound: {
     maxHp: 45, moveSpeed: 3.4, damage: 8, xpReward: 20,
-    aggroRange: 10, attackRange: 1.7, attackCooldown: 1.3,
+    aggroRange: 10, attackRange: 1.7, attackCooldown: 1.3, hitRadius: 0.6,
   },
   boar: {
     maxHp: 70, moveSpeed: 3.0, damage: 10, xpReward: 30,
-    aggroRange: 11, attackRange: 1.9, attackCooldown: 1.6,
+    aggroRange: 11, attackRange: 1.9, attackCooldown: 1.6, hitRadius: 0.9,
     chargeDamage: 22, chargeSpeed: 11, chargeRange: 9,
     chargeWindup: 0.6, chargeDuration: 0.4, chargeCooldown: 3.5,
   },
   vine: {
-    maxHp: 30, moveSpeed: 0, damage: 7, xpReward: 22,
+    maxHp: 30, moveSpeed: 0, damage: 7, xpReward: 22, hitRadius: 0.7,
     aggroRange: 13, shootRange: 11, projectileSpeed: 9, shootCooldown: 1.8,
   },
   bat: {
     maxHp: 22, moveSpeed: 5.2, damage: 5, xpReward: 16,
-    aggroRange: 12, attackRange: 1.4, attackCooldown: 0.9,
+    aggroRange: 12, attackRange: 1.4, attackCooldown: 0.9, hitRadius: 0.45,
   },
   golem: {
     maxHp: 130, moveSpeed: 2.1, damage: 14, xpReward: 45,
-    aggroRange: 9, attackRange: 2.1, attackCooldown: 1.8,
+    aggroRange: 9, attackRange: 2.1, attackCooldown: 1.8, hitRadius: 1.2,
   },
 };
 
@@ -58,6 +58,7 @@ export class Enemy {
     this.aggroRange = cfg.aggroRange ?? AGGRO_RANGE;
     this.attackRange = cfg.attackRange ?? ATTACK_RANGE;
     this.attackCooldown = cfg.attackCooldown ?? ATTACK_COOLDOWN;
+    this.hitRadius = cfg.hitRadius ?? 0.5; // 플레이어 공격 판정에 더해지는 여유 반경 — 몸집에 맞춰 맞추기 쉽게
 
     this.state = 'wander';
     this.wanderTarget = this.spawnPos.clone();

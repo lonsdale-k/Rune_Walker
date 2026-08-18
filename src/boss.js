@@ -37,6 +37,7 @@ export class Boss {
     this.hp = this.maxHp;
     this.moveSpeed = opts.moveSpeed ?? 2.6;
     this.xpReward = opts.xpReward ?? 220;
+    this.hitRadius = opts.hitRadius ?? 1.5; // 거대한 몸집에 맞춘 넉넉한 공격 판정 반경
 
     this.state = 'guard'; // guard -> chase -> slamWindup -> slamRecover / chargeWindup -> charging -> chargeRecover
     this.forward = { x: 0, z: 1 };
@@ -335,6 +336,7 @@ export class SporeQueen {
     this.maxHp = opts.maxHp ?? 480;
     this.hp = this.maxHp;
     this.xpReward = opts.xpReward ?? 210;
+    this.hitRadius = opts.hitRadius ?? 1.4; // 거대한 몸집에 맞춘 넉넉한 공격 판정 반경
 
     this.state = 'guard'; // guard -> chase -> volleyWindup -> volleying -> volleyRecover
     this.timer = 0;
@@ -675,6 +677,7 @@ export class CorruptedBear {
     this.hp = this.maxHp;
     this.moveSpeed = opts.moveSpeed ?? 2.8;
     this.xpReward = opts.xpReward ?? 400;
+    this.hitRadius = opts.hitRadius ?? 1.9; // 최종 보스의 거대한 몸집에 맞춘 넉넉한 공격 판정 반경
 
     this.state = 'guard'; // guard -> chase -> slamWindup/slamRecover, chargeWindup/charging/chargeRecover, burstWindup/burstRecover
     this.forward = { x: 0, z: 1 };

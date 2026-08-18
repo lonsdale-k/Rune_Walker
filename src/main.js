@@ -4,6 +4,7 @@ import {
   WORLD_RADIUS,
   FINAL_BOSS_POS,
   COLOSSEUM_ENTRANCE_ANGLE,
+  COLOSSEUM_RADIUS,
   REQUIRED_LEVEL,
   OUTER_GATE_RADIUS,
   INNER_GATE_RADIUS,
@@ -175,6 +176,19 @@ async function main() {
     }
   }
 
+  // 콜로세움 몬스터/최종 보스는 결계가 풀려 활동을 시작해도 콜로세움 경계 밖으로는 나갈 수 없음
+  function containInColosseum(entity) {
+    const dx = entity.group.position.x - FINAL_BOSS_POS.x;
+    const dz = entity.group.position.z - FINAL_BOSS_POS.z;
+    const dist = Math.hypot(dx, dz);
+    const maxDist = COLOSSEUM_RADIUS - 2;
+    if (dist > maxDist) {
+      const scale = maxDist / (dist || 0.001);
+      entity.group.position.x = FINAL_BOSS_POS.x + dx * scale;
+      entity.group.position.z = FINAL_BOSS_POS.z + dz * scale;
+    }
+  }
+
   let colosseumCleared = false;
   function checkColosseumCleared() {
     // 한 번 클리어되면 이후 골렘이 리스폰하더라도 성 진입 결계가 다시 잠기지 않도록 래치
@@ -200,7 +214,7 @@ async function main() {
     requestAnimationFrame(animate);
     const dt = Math.min(clock.getDelta(), 0.05);
 
-    if (input.consumePanelToggle()) {
+    if (!ui.tutorialOpen && input.consumePanelToggle()) {
       ui.toggleSkillPanel();
       if (ui.panelOpen) ui.renderSkillPanel(skillState, onAllocate, onRespec);
     }
@@ -213,10 +227,14 @@ async function main() {
     setOuterGateLocked(outerGateLocked);
     setInnerGateLocked(innerGateLocked);
 
-    if (!player.isDead) {
-      player.update(dt, input, skillState, WORLD_RADIUS, outerGateLocked, innerGateLocked);
+    // 스킬 트리 패널(또는 튜토리얼)이 열려 있는 동안은 전투/이동을 완전히 멈춰
+    // 뒤에서 몬스터에게 얻어맞는 일이 없도록 함
+    const paused = ui.isPaused();
 
-      if (!ui.panelOpen) {
+    if (!player.isDead) {
+      if (!paused) {
+        player.update(dt, input, skillState, WORLD_RADIUS, outerGateLocked, innerGateLocked);
+
         if (input.consumeAttack() && player.canAttack()) {
           const hits = player.meleeAttack(allTargets);
           handleSpecialProc(hits);
@@ -227,16 +245,18 @@ async function main() {
             if (result?.type === 'attack_6') handleSpecialProc(result.hits);
           }
         }
-      }
 
-      for (const enemy of enemies) {
-        enemy.update(dt, player.group, (dmg) => player.takeDamage(dmg));
+        for (const enemy of enemies) {
+          enemy.update(dt, player.group, (dmg) => player.takeDamage(dmg));
+        }
+        for (const boss of bosses) {
+          boss.update(dt, player.group, (dmg) => player.takeDamage(dmg));
+        }
+        for (const m of colosseumMonsters) containInColosseum(m);
+        containInColosseum(finalBoss);
+        grantXpForKills();
+        checkVictory();
       }
-      for (const boss of bosses) {
-        boss.update(dt, player.group, (dmg) => player.takeDamage(dmg));
-      }
-      grantXpForKills();
-      checkVictory();
 
       const distToColosseum = Math.hypot(
         player.group.position.x - FINAL_BOSS_POS.x,

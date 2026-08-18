@@ -14,6 +14,12 @@ export class UI {
     this._buildInstructions();
     this._buildBossBar();
     this._buildGateHint();
+    this._buildTutorial();
+  }
+
+  // 스킬 패널이나 튜토리얼처럼 화면을 덮는 오버레이가 떠 있는 동안은 게임 진행을 멈춰야 함
+  isPaused() {
+    return this.panelOpen || this.tutorialOpen;
   }
 
   _buildHUD() {
@@ -62,10 +68,26 @@ export class UI {
 
     const hint = document.createElement('div');
     hint.style.cssText = `
-      position: absolute; right: 20px; bottom: 20px; color: #cfd8dc; font-size: 12px;
-      text-align: right; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+      position: absolute; right: 20px; bottom: 20px; display: flex; align-items: center; gap: 10px;
     `;
-    hint.innerHTML = `WASD 이동 · 좌클릭 공격<br/>Q/E/Space/R 스킬 · Tab 스킬 트리`;
+    const hintText = document.createElement('div');
+    hintText.style.cssText = `
+      color: #cfd8dc; font-size: 12px; text-align: right; pointer-events: none;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    `;
+    hintText.innerHTML = `WASD 이동 · 좌클릭 공격<br/>Q/E/Space/R 스킬 · Tab 스킬 트리`;
+    hint.appendChild(hintText);
+
+    const helpBtn = document.createElement('button');
+    helpBtn.textContent = '?';
+    helpBtn.title = '튜토리얼 다시 보기';
+    helpBtn.style.cssText = `
+      width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.25);
+      background: rgba(20,20,30,0.6); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer;
+      flex-shrink: 0;
+    `;
+    hint.appendChild(helpBtn);
+    this.helpBtn = helpBtn;
     this.root.appendChild(hint);
   }
 
@@ -307,6 +329,127 @@ export class UI {
   setGateHint(text) {
     this.gateHintEl.style.display = text ? 'block' : 'none';
     if (text) this.gateHintEl.textContent = text;
+  }
+
+  _buildTutorial() {
+    const TUTORIAL_SEEN_KEY = 'runewalker_tutorial_seen';
+    this.tutorialSteps = [
+      {
+        title: '이동과 공격',
+        body: 'WASD(또는 방향키)로 이동합니다.<br/>마우스 좌클릭으로 바라보는 방향의 적을 공격해요.',
+      },
+      {
+        title: '스킬 트리',
+        body: 'Tab을 눌러 스킬 트리를 열고 포인트를 배분하세요.<br/>배분한 액티브 스킬은 Q / E / Space / R 키로 사용합니다.',
+      },
+      {
+        title: '전투 팁',
+        body: '체력이 낮으면 방어형 스킬로, 광역 적이 많으면 특수 스킬로 대응해보세요.<br/>스킬 트리가 열려 있는 동안은 전투와 이동이 멈춰요.',
+      },
+      {
+        title: '콜로세움과 결계',
+        body: '레벨을 올려 <b>봉인된 결계</b>를 넘으면 콜로세움에 입장할 수 있어요.<br/>콜로세움의 몬스터를 모두 처치하면 성 안의 최종 보스에게 도전할 수 있습니다.',
+      },
+    ];
+    this.tutorialIndex = 0;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: absolute; inset: 0; background: rgba(5,5,12,0.78);
+      display: none; align-items: center; justify-content: center; z-index: 30;
+      font-family: inherit; color: #fff;
+    `;
+    const card = document.createElement('div');
+    card.style.cssText = `
+      width: 420px; max-width: 88vw; background: #1b1b26; border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 14px; padding: 26px 26px 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.55);
+    `;
+    card.innerHTML = `
+      <div id="tutStepDots" style="display:flex; gap:6px; margin-bottom:14px;"></div>
+      <div id="tutTitle" style="font-size:18px; font-weight:800; margin-bottom:10px;"></div>
+      <div id="tutBody" style="font-size:13px; line-height:1.7; color:#cfd8dc; min-height:64px;"></div>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:20px;">
+        <button id="tutSkipBtn" style="background:transparent; border:none; color:#8a8a9a; font-size:12px; cursor:pointer;">건너뛰기</button>
+        <div style="display:flex; gap:8px;">
+          <button id="tutPrevBtn" style="background:#2b2b3d; color:#fff; border:none; border-radius:7px; padding:8px 14px; cursor:pointer; font-size:13px;">이전</button>
+          <button id="tutNextBtn" style="background:#3a6ea5; color:#fff; border:none; border-radius:7px; padding:8px 16px; cursor:pointer; font-size:13px; font-weight:700;">다음</button>
+        </div>
+      </div>
+    `;
+    overlay.appendChild(card);
+    this.root.appendChild(overlay);
+
+    this.tutorialEl = overlay;
+    this.tutorialOpen = false;
+    this.tutTitleEl = card.querySelector('#tutTitle');
+    this.tutBodyEl = card.querySelector('#tutBody');
+    this.tutDotsEl = card.querySelector('#tutStepDots');
+    this.tutPrevBtn = card.querySelector('#tutPrevBtn');
+    this.tutNextBtn = card.querySelector('#tutNextBtn');
+    this.tutSkipBtn = card.querySelector('#tutSkipBtn');
+
+    this.tutPrevBtn.addEventListener('click', () => {
+      if (this.tutorialIndex > 0) {
+        this.tutorialIndex -= 1;
+        this._renderTutorialStep();
+      }
+    });
+    this.tutNextBtn.addEventListener('click', () => {
+      if (this.tutorialIndex < this.tutorialSteps.length - 1) {
+        this.tutorialIndex += 1;
+        this._renderTutorialStep();
+      } else {
+        this.hideTutorial();
+      }
+    });
+    this.tutSkipBtn.addEventListener('click', () => this.hideTutorial());
+
+    this.helpBtn.addEventListener('click', () => this.showTutorial());
+
+    // 첫 방문일 때만 자동으로 튜토리얼을 띄움 (이후에는 ? 버튼으로 다시 볼 수 있음)
+    try {
+      if (!localStorage.getItem(TUTORIAL_SEEN_KEY)) {
+        this.showTutorial();
+      }
+    } catch {
+      // localStorage 접근 불가 환경(프라이빗 모드 등)에서는 조용히 건너뜀
+    }
+    this._tutorialSeenKey = TUTORIAL_SEEN_KEY;
+  }
+
+  showTutorial() {
+    this.tutorialIndex = 0;
+    this.tutorialOpen = true;
+    this.tutorialEl.style.display = 'flex';
+    this._renderTutorialStep();
+  }
+
+  hideTutorial() {
+    this.tutorialOpen = false;
+    this.tutorialEl.style.display = 'none';
+    try {
+      localStorage.setItem(this._tutorialSeenKey, '1');
+    } catch {
+      // 무시 — 저장 안 돼도 다음 세션에 다시 뜨는 것뿐, 치명적이지 않음
+    }
+  }
+
+  _renderTutorialStep() {
+    const step = this.tutorialSteps[this.tutorialIndex];
+    const isLast = this.tutorialIndex === this.tutorialSteps.length - 1;
+    this.tutTitleEl.textContent = `${this.tutorialIndex + 1}. ${step.title}`;
+    this.tutBodyEl.innerHTML = step.body;
+    this.tutPrevBtn.style.visibility = this.tutorialIndex === 0 ? 'hidden' : 'visible';
+    this.tutNextBtn.textContent = isLast ? '시작하기' : '다음';
+    this.tutDotsEl.innerHTML = '';
+    for (let i = 0; i < this.tutorialSteps.length; i++) {
+      const dot = document.createElement('div');
+      dot.style.cssText = `
+        width: 7px; height: 7px; border-radius: 50%;
+        background: ${i === this.tutorialIndex ? '#7ad9ff' : 'rgba(255,255,255,0.2)'};
+      `;
+      this.tutDotsEl.appendChild(dot);
+    }
   }
 
   buildAccountBar(email, onLogout) {

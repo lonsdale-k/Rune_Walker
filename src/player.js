@@ -211,7 +211,7 @@ export class Player {
       const dx = enemy.group.position.x - this.group.position.x;
       const dz = enemy.group.position.z - this.group.position.z;
       const dist = Math.hypot(dx, dz);
-      if (dist > ATTACK_RANGE) continue;
+      if (dist > ATTACK_RANGE + (enemy.hitRadius ?? 0)) continue;
       const ndx = dx / (dist || 1);
       const ndz = dz / (dist || 1);
       const dot = ndx * this.forward.x + ndz * this.forward.z;
@@ -261,7 +261,7 @@ export class Player {
           enemy.group.position.x - this.group.position.x,
           enemy.group.position.z - this.group.position.z
         );
-        if (dist <= 4.2) {
+        if (dist <= 4.2 + (enemy.hitRadius ?? 0)) {
           enemy.takeDamage(30 * this.elementalDmgMult);
           enemy.applyBurn(5 * this.elementalDmgMult, 3);
           hits.push(enemy);
@@ -305,11 +305,50 @@ function buildPlayerMesh() {
   body.castShadow = true;
   group.add(body);
 
+  // 어깨 갑옷 — 몸통에 볼륨감을 더함
+  const armorMat = new THREE.MeshStandardMaterial({ color: 0x2f5a8a, flatShading: true });
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), armorMat);
+    shoulder.position.set(side * 0.52, 1.42, 0);
+    shoulder.scale.set(1, 0.85, 1);
+    shoulder.castShadow = true;
+    group.add(shoulder);
+  }
+
+  // 등 뒤로 드리운 망토 — 살짝 뒤로 기울여 이동감을 연출
+  const capeMat = new THREE.MeshStandardMaterial({
+    color: 0x27415f, flatShading: true, side: THREE.DoubleSide,
+  });
+  const cape = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.05, 4, 1, true), capeMat);
+  cape.rotation.x = Math.PI;
+  cape.rotation.y = Math.PI / 4;
+  cape.position.set(0, 0.95, -0.32);
+  cape.scale.set(1, 1, 0.5);
+  cape.castShadow = true;
+  group.add(cape);
+
+  // 허리 룬 벨트 — 은은하게 빛나는 장식
+  const beltMat = new THREE.MeshStandardMaterial({
+    color: 0x7ad9ff, emissive: 0x2fa9e0, emissiveIntensity: 0.8, flatShading: true,
+  });
+  const belt = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.045, 6, 12), beltMat);
+  belt.rotation.x = Math.PI / 2;
+  belt.position.set(0, 0.55, 0);
+  group.add(belt);
+
   const headMat = new THREE.MeshStandardMaterial({ color: 0xe8c39e, flatShading: true });
   const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.38, 0), headMat);
   head.position.y = 1.85;
   head.castShadow = true;
   group.add(head);
+
+  // 머리카락 — 실루엣에 개성을 더함
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x3f2e22, flatShading: true });
+  const hair = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), hairMat);
+  hair.scale.set(1.03, 0.62, 1.03);
+  hair.position.set(0, 2.06, -0.03);
+  hair.castShadow = true;
+  group.add(hair);
 
   const runeMat = new THREE.MeshStandardMaterial({
     color: 0x7ad9ff,
@@ -320,11 +359,24 @@ function buildPlayerMesh() {
   rune.position.set(0, 1.25, 0.35);
   group.add(rune);
 
+  const runeLight = new THREE.PointLight(0x7ad9ff, 0.7, 4);
+  runeLight.position.copy(rune.position);
+  group.add(runeLight);
+
   const noseMat = new THREE.MeshStandardMaterial({ color: 0xffd166, flatShading: true });
   const nose = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.4, 4), noseMat);
   nose.rotation.x = Math.PI / 2;
   nose.position.set(0, 0.95, 0.5);
   group.add(nose);
+
+  // 팔 — 몸통만 있던 실루엣을 보완
+  const armMat = new THREE.MeshStandardMaterial({ color: 0xe8c39e, flatShading: true });
+  for (const side of [-1, 1]) {
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.11, 0.55, 2, 5), armMat);
+    arm.position.set(side * 0.58, 0.85, 0);
+    arm.castShadow = true;
+    group.add(arm);
+  }
 
   const legMat = new THREE.MeshStandardMaterial({ color: 0x2a2a35, flatShading: true });
   for (const side of [-1, 1]) {
@@ -332,6 +384,15 @@ function buildPlayerMesh() {
     leg.position.set(side * 0.25, 0.35, 0);
     leg.castShadow = true;
     group.add(leg);
+  }
+
+  // 부츠 — 다리 아래쪽에 색 대비를 줘서 마무리
+  const bootMat = new THREE.MeshStandardMaterial({ color: 0x1c1c24, flatShading: true });
+  for (const side of [-1, 1]) {
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.4), bootMat);
+    boot.position.set(side * 0.25, 0.11, 0.03);
+    boot.castShadow = true;
+    group.add(boot);
   }
 
   group.userData.bodyMat = bodyMat;
