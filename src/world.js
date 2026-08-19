@@ -728,6 +728,134 @@ export function createRiftCrack() {
   return group;
 }
 
+export function createWoodPile() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x5a4028, flatShading: true });
+  const logSpecs = [[0, 0.08], [0.16, 0.08], [-0.16, 0.08], [0.08, 0.22], [-0.08, 0.22]];
+  for (const [x, y] of logSpecs) {
+    const log = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.6, 6), mat);
+    log.rotation.z = Math.PI / 2;
+    log.position.set(x, y, 0);
+    log.castShadow = true;
+    group.add(log);
+  }
+  return group;
+}
+
+export function createWell() {
+  const group = new THREE.Group();
+  const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8a8a86, flatShading: true });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, flatShading: true });
+
+  const rimSegments = 10;
+  for (let i = 0; i < rimSegments; i++) {
+    const angle = (i / rimSegments) * Math.PI * 2;
+    const stone = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.5, 0.3), stoneMat);
+    stone.position.set(Math.cos(angle) * 0.7, 0.25, Math.sin(angle) * 0.7);
+    stone.rotation.y = angle;
+    stone.castShadow = true;
+    group.add(stone);
+  }
+
+  const waterMat = new THREE.MeshStandardMaterial({
+    color: 0x3fa7c9, emissive: 0x1c4f66, emissiveIntensity: 0.3, roughness: 0.2,
+  });
+  const water = new THREE.Mesh(new THREE.CircleGeometry(0.6, 12), waterMat);
+  water.rotation.x = -Math.PI / 2;
+  water.position.y = 0.4;
+  group.add(water);
+
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 5), woodMat);
+    post.position.set(side * 0.65, 1.1, 0);
+    post.castShadow = true;
+    group.add(post);
+  }
+  const roofBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.5, 5), woodMat);
+  roofBeam.rotation.z = Math.PI / 2;
+  roofBeam.position.set(0, 1.7, 0);
+  group.add(roofBeam);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(0.9, 0.5, 4), woodMat);
+  roof.position.set(0, 2, 0);
+  roof.rotation.y = Math.PI / 4;
+  roof.castShadow = true;
+  group.add(roof);
+
+  const bucketMat = new THREE.MeshStandardMaterial({ color: 0x5a4530, flatShading: true });
+  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.14, 6), bucketMat);
+  bucket.position.set(0, 1.2, 0);
+  group.add(bucket);
+
+  return group;
+}
+
+export function createBench() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x4a3524, flatShading: true });
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.08, 0.4), mat);
+  seat.position.y = 0.42;
+  seat.castShadow = true;
+  group.add(seat);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 0.06), mat);
+  back.position.set(0, 0.68, -0.17);
+  group.add(back);
+  for (const side of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.36), mat);
+    leg.position.set(side * 0.5, 0.21, 0);
+    group.add(leg);
+  }
+  return group;
+}
+
+export function createGardenPatch() {
+  const group = new THREE.Group();
+  const soilMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1c, flatShading: true });
+  const soil = new THREE.Mesh(new THREE.CircleGeometry(1.1, 10), soilMat);
+  soil.rotation.x = -Math.PI / 2;
+  soil.position.y = 0.02;
+  group.add(soil);
+
+  const fenceMat = new THREE.MeshStandardMaterial({ color: 0x5a4530, flatShading: true });
+  const postCount = 8;
+  for (let i = 0; i < postCount; i++) {
+    const angle = (i / postCount) * Math.PI * 2;
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 4), fenceMat);
+    post.position.set(Math.cos(angle) * 1.1, 0.15, Math.sin(angle) * 1.1);
+    group.add(post);
+  }
+
+  for (let i = 0; i < 6; i++) {
+    const flower = createFlower();
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.random() * 0.8;
+    flower.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+    group.add(flower);
+  }
+  return group;
+}
+
+export function createBanner(color = 0x7ad9ff) {
+  const group = new THREE.Group();
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2420, flatShading: true });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 2.6, 5), poleMat);
+  pole.position.y = 1.3;
+  pole.castShadow = true;
+  group.add(pole);
+
+  const clothMat = new THREE.MeshStandardMaterial({
+    color, emissive: color, emissiveIntensity: 0.3, flatShading: true, side: THREE.DoubleSide,
+  });
+  const banner = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.03), clothMat);
+  banner.position.set(0.29, 1.9, 0);
+  group.add(banner);
+  const pennant = new THREE.Mesh(new THREE.ConeGeometry(0.25, 0.3, 3), clothMat);
+  pennant.position.set(0.29, 1.25, 0);
+  pennant.rotation.x = Math.PI;
+  group.add(pennant);
+
+  return group;
+}
+
 // 허브(마을) 전용 건물/소품 — 로우폴리 오두막, 노점, 가로등. 초원/동굴 스테이지에는 쓰지 않음.
 export function createCottage(variant = 0) {
   const group = new THREE.Group();
@@ -768,14 +896,44 @@ export function createCottage(variant = 0) {
   door.position.set(0, 0.65, depth / 2 + 0.01);
   group.add(door);
 
-  // 창문 — 은은한 온기 불빛으로 사람 사는 마을 느낌을 더함
+  // 문 앞 디딤돌
+  const stepMat = new THREE.MeshStandardMaterial({ color: 0x6a6a64, flatShading: true });
+  const step = new THREE.Mesh(new THREE.BoxGeometry(1, 0.12, 0.5), stepMat);
+  step.position.set(0, 0.06, depth / 2 + 0.3);
+  step.receiveShadow = true;
+  group.add(step);
+
+  // 창문 — 은은한 온기 불빛으로 사람 사는 마을 느낌을 더함 (앞면 + 옆면 두 곳)
   const windowMat = new THREE.MeshStandardMaterial({ color: 0xffd97a, emissive: 0xffb84a, emissiveIntensity: 1.1 });
-  const windowMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.06), windowMat);
-  windowMesh.position.set(width / 2 - 0.9, 1.3, depth / 2 + 0.01);
-  group.add(windowMesh);
-  const light = new THREE.PointLight(0xffb84a, 0.6, 4);
-  light.position.copy(windowMesh.position);
-  group.add(light);
+  const frontWindow = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.06), windowMat);
+  frontWindow.position.set(width / 2 - 0.9, 1.3, depth / 2 + 0.01);
+  group.add(frontWindow);
+  const sideWindow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.45, 0.45), windowMat);
+  sideWindow.position.set(-width / 2 - 0.01, 1.25, 0.2);
+  group.add(sideWindow);
+  for (const w of [frontWindow, sideWindow]) {
+    const wLight = new THREE.PointLight(0xffb84a, 0.55, 4);
+    wLight.position.copy(w.position);
+    group.add(wLight);
+  }
+
+  // 창문 아래 작은 화분
+  const boxMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, flatShading: true });
+  const flowerBox = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.14, 0.16), boxMat);
+  flowerBox.position.set(width / 2 - 0.9, 1.02, depth / 2 + 0.08);
+  group.add(flowerBox);
+  for (let i = 0; i < 3; i++) {
+    const flower = createFlower();
+    flower.scale.multiplyScalar(0.6);
+    flower.position.set(width / 2 - 0.9 + (i - 1) * 0.16, 1.08, depth / 2 + 0.1);
+    group.add(flower);
+  }
+
+  // 옆에 쌓인 장작더미
+  const woodPile = createWoodPile();
+  woodPile.position.set(-width / 2 - 0.35, 0, -depth / 2 + 0.5);
+  woodPile.rotation.y = Math.PI / 2;
+  group.add(woodPile);
 
   return group;
 }
@@ -1273,9 +1431,13 @@ export function createHubWorld() {
   const avoid = [
     { x: 0, z: -14, r: 7.5 }, // 연못
     { x: 0, z: 10, r: 6 }, // 스폰 룬 서클
-    { x: -15, z: -4, r: 3.2 }, // 오두막 A
-    { x: 14, z: 6, r: 3.2 }, // 오두막 B
+    { x: -15, z: -4, r: 3.6 }, // 오두막 A (+텃밭)
+    { x: 14, z: 6, r: 3.6 }, // 오두막 B (+텃밭)
+    { x: 16, z: -16, r: 3.2 }, // 오두막 C
     { x: -10, z: 15, r: 3 }, // 노점
+    { x: -11, z: -8, r: 2 }, // 우물
+    { x: 9, z: -14, r: 2 }, // 벤치
+    { x: -9, z: -14, r: 2 }, // 벤치
   ];
 
   for (let i = 0; i < 26; i++) {
@@ -1336,10 +1498,54 @@ export function createHubWorld() {
   cottageB.rotation.y = -2.3;
   scene.add(cottageB);
 
+  const cottageC = createCottage(2);
+  cottageC.position.set(16, 0, -16);
+  cottageC.rotation.y = 2.5;
+  scene.add(cottageC);
+
   const stall = createMarketStall();
   stall.position.set(-10, 0, 15);
   stall.rotation.y = 0.5;
   scene.add(stall);
+
+  // 오두막 옆 작은 텃밭 — 사람이 가꾸는 마을이라는 인상을 더함
+  const gardenA = createGardenPatch();
+  gardenA.position.set(-12.5, 0, -7);
+  scene.add(gardenA);
+  const gardenB = createGardenPatch();
+  gardenB.position.set(17, 0, 8);
+  scene.add(gardenB);
+
+  // 우물 — 오두막 A 마당의 생활감 있는 랜드마크
+  const well = createWell();
+  well.position.set(-11, 0, -8);
+  scene.add(well);
+
+  // 연못가 벤치 두 개 — 서로 마주 보게 배치
+  const benchLeft = createBench();
+  benchLeft.position.set(9, 0, -14);
+  benchLeft.rotation.y = -Math.PI / 2;
+  scene.add(benchLeft);
+  const benchRight = createBench();
+  benchRight.position.set(-9, 0, -14);
+  benchRight.rotation.y = Math.PI / 2;
+  scene.add(benchRight);
+
+  // 노점 옆 장작/짐 더미 — 시장 구역에 생활감을 더함
+  const stallWood = createWoodPile();
+  stallWood.position.set(-8.4, 0, 13.6);
+  stallWood.rotation.y = 0.9;
+  scene.add(stallWood);
+
+  // 룬 서클 양옆 깃발 — 스폰 지점을 시각적으로 강조
+  const bannerL = createBanner(0x7ad9ff);
+  bannerL.position.set(-6, 0, 9);
+  bannerL.rotation.y = 0.5;
+  scene.add(bannerL);
+  const bannerR = createBanner(0xffd166);
+  bannerR.position.set(6, 0, 9);
+  bannerR.rotation.y = -0.5;
+  scene.add(bannerR);
 
   // 광장을 둘러싼 가로등 4개 — 연못과 룬 서클 사이 공터를 밤에도 밝혀줌
   for (const [x, z] of [[6, -2], [-6, -2], [6, 4], [-6, 4]]) {
