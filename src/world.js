@@ -12,10 +12,10 @@ export const PALETTE = {
   hubGround: 0x4a8f5a,
   ruinsSky: 0x2a2438,
   ruinsGround: 0x4a4438,
-  abyssSky: 0x0c0814,
-  abyssGround: 0x1a1420,
-  riftSky: 0x05060f,
-  riftGround: 0x14141c,
+  abyssSky: 0x170f24,
+  abyssGround: 0x281f36,
+  riftSky: 0x0e0f1c,
+  riftGround: 0x1e1e2e,
 };
 
 const CORRUPT_CENTER = { x: -45, z: -45 };
@@ -616,6 +616,114 @@ export function createCorruptCrystal() {
     spike.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI, (Math.random() - 0.5) * 0.3);
     group.add(spike);
   }
+  group.userData.mat = mat;
+  return group;
+}
+
+// 여러 스테이지가 공용으로 쓰는 배경 랜드마크/디테일 소품 — 지형이 밋밋해 보이는 곳을 채우는 용도.
+export function createStandingStones() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x7a7a72, flatShading: true });
+  const count = 2 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < count; i++) {
+    const h = 1.4 + Math.random() * 1.3;
+    const stone = new THREE.Mesh(new THREE.BoxGeometry(0.5 + Math.random() * 0.25, h, 0.35 + Math.random() * 0.2), mat);
+    stone.position.set((i - (count - 1) / 2) * 0.9 + (Math.random() - 0.5) * 0.3, h / 2, (Math.random() - 0.5) * 0.5);
+    stone.rotation.y = Math.random() * Math.PI;
+    stone.rotation.z = (Math.random() - 0.5) * 0.2;
+    stone.castShadow = true;
+    stone.receiveShadow = true;
+    group.add(stone);
+  }
+  return group;
+}
+
+export function createRuinPillarCluster() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x6a6070, flatShading: true });
+  const count = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    const h = 0.5 + Math.random() * 2.2;
+    const broken = h < 1.4;
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, h, 6), mat);
+    pillar.position.set((Math.random() - 0.5) * 2.4, h / 2, (Math.random() - 0.5) * 2.4);
+    if (broken) pillar.rotation.set((Math.random() - 0.5) * 0.9, Math.random() * Math.PI, (Math.random() - 0.5) * 0.9);
+    else pillar.rotation.y = Math.random() * Math.PI;
+    pillar.castShadow = true;
+    pillar.receiveShadow = true;
+    group.add(pillar);
+  }
+  const rubbleMat = new THREE.MeshStandardMaterial({ color: 0x55505c, flatShading: true });
+  for (let i = 0; i < 4; i++) {
+    const chunk = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2 + Math.random() * 0.2, 0), rubbleMat);
+    chunk.position.set((Math.random() - 0.5) * 3, 0.12, (Math.random() - 0.5) * 3);
+    chunk.rotation.set(Math.random(), Math.random(), Math.random());
+    group.add(chunk);
+  }
+  return group;
+}
+
+export function createStalactite() {
+  const mat = new THREE.MeshStandardMaterial({ color: 0x352c26, flatShading: true });
+  const h = 1.2 + Math.random() * 2;
+  const mesh = new THREE.Mesh(new THREE.ConeGeometry(0.3 + Math.random() * 0.25, h, 5), mat);
+  mesh.rotation.x = Math.PI;
+  mesh.castShadow = true;
+  return mesh;
+}
+
+export function createGlowMushroom() {
+  const group = new THREE.Group();
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0xd8d2c0, flatShading: true });
+  const capColors = [0x7fe8ff, 0xb87fff, 0x7fffb0];
+  const capColor = capColors[Math.floor(Math.random() * capColors.length)];
+  const capMat = new THREE.MeshStandardMaterial({
+    color: capColor, emissive: capColor, emissiveIntensity: 1.1, flatShading: true,
+  });
+  const count = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    const h = 0.25 + Math.random() * 0.3;
+    const x = (Math.random() - 0.5) * 0.5;
+    const z = (Math.random() - 0.5) * 0.5;
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, h, 5), stemMat);
+    stem.position.set(x, h / 2, z);
+    group.add(stem);
+    const cap = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08 + Math.random() * 0.05, 6, 5, 0, Math.PI * 2, 0, Math.PI / 2),
+      capMat
+    );
+    cap.position.set(x, h, z);
+    group.add(cap);
+  }
+  const light = new THREE.PointLight(capColor, 0.5, 2.5);
+  light.position.y = 0.3;
+  group.add(light);
+  group.userData.capMat = capMat;
+  return group;
+}
+
+export function createFloatingSpire() {
+  const mat = new THREE.MeshStandardMaterial({ color: 0x241c30, flatShading: true });
+  const spire = new THREE.Mesh(new THREE.OctahedronGeometry(0.5 + Math.random() * 0.6, 0), mat);
+  spire.scale.y = 1.6 + Math.random() * 1;
+  spire.rotation.set(Math.random(), Math.random(), Math.random());
+  spire.castShadow = true;
+  return spire;
+}
+
+export function createRiftCrack() {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xb85fe0, emissive: 0xff8fe0, emissiveIntensity: 1.4, flatShading: true, side: THREE.DoubleSide,
+  });
+  const len = 2 + Math.random() * 2.5;
+  const crack = new THREE.Mesh(new THREE.PlaneGeometry(0.25, len), mat);
+  crack.rotation.x = -Math.PI / 2;
+  crack.position.y = 0.04;
+  crack.rotation.z = Math.random() * Math.PI;
+  const light = new THREE.PointLight(0xb85fe0, 0.7, 4);
+  light.position.y = 0.5;
+  const group = new THREE.Group();
+  group.add(crack, light);
   group.userData.mat = mat;
   return group;
 }
@@ -1320,6 +1428,16 @@ export function createPlainsWorld() {
     scene.add(tuft);
   }
 
+  // 고대 선돌 무리 — 초원이 밋밋해 보이지 않도록 곳곳에 랜드마크를 심음
+  for (let i = 0; i < 5; i++) {
+    const { x, z } = scatterPoint(14, PLAINS_RADIUS - 6);
+    if (!isClear(x, z, avoid, 3)) continue;
+    const stones = createStandingStones();
+    stones.position.set(x, 0, z);
+    stones.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(stones);
+  }
+
   // 원경 산맥
   for (let i = 0; i < 12; i++) {
     const angle = (i / 12) * Math.PI * 2 + Math.random() * 0.15;
@@ -1401,6 +1519,27 @@ export function createCaveWorld() {
     scene.add(wall);
   }
 
+  // 천장에 매달린 종유석 — 천장이 텅 비어 보이지 않도록
+  for (let i = 0; i < 22; i++) {
+    const { x, z } = scatterPoint(3, CAVE_RADIUS - 2);
+    const stalactite = createStalactite();
+    stalactite.position.set(x, 21.5, z);
+    const s = 0.7 + Math.random() * 0.8;
+    stalactite.scale.set(s, s, s);
+    scene.add(stalactite);
+  }
+
+  // 발광 버섯 군집 — 바닥에 생기를 더하는 은은한 색색 조명
+  const mushrooms = [];
+  for (let i = 0; i < 16; i++) {
+    const { x, z } = scatterPoint(4, CAVE_RADIUS - 3);
+    const mushroom = createGlowMushroom();
+    mushroom.position.set(x, 0, z);
+    mushroom.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(mushroom);
+    mushrooms.push(mushroom);
+  }
+
   const motes = setupMotes(scene, 24, CAVE_RADIUS - 4, true);
 
   let elapsed = 0;
@@ -1410,6 +1549,9 @@ export function createCaveWorld() {
     for (const crystal of crystals) {
       const mat = crystal.userData.mat;
       mat.emissiveIntensity = 0.6 + Math.sin(elapsed * 2 + crystal.position.x) * 0.4;
+    }
+    for (const mushroom of mushrooms) {
+      mushroom.userData.capMat.emissiveIntensity = 0.9 + Math.sin(elapsed * 2.4 + mushroom.position.x * 1.3) * 0.4;
     }
   }
 
@@ -1422,12 +1564,17 @@ export const RUINS_RADIUS = 48;
 export function createRuinsWorld() {
   const scene = new THREE.Scene();
   setupBaseEnvironment(scene, {
-    skyColor: PALETTE.ruinsSky, groundColor: PALETTE.ruinsGround, fogNear: 20, fogFar: 100,
-    sunColor: 0xcfa0ff, sunIntensity: 0.9, hemiIntensity: 0.4,
+    skyColor: PALETTE.ruinsSky, groundColor: PALETTE.ruinsGround, fogNear: 22, fogFar: 110,
+    sunColor: 0xcfa0ff, sunIntensity: 1.05, hemiIntensity: 0.65,
   });
 
+  // 폐허 전역을 은은하게 채워 시야가 확보되도록 (스카이 톤이 어두워 기본 태양광만으론 부족함)
+  const fillLight = new THREE.PointLight(0x9a7fd0, 1.1, 90);
+  fillLight.position.set(0, 18, 0);
+  scene.add(fillLight);
+
   const isClear = (x, z, avoid, extra = 0) => avoid.every((a) => Math.hypot(x - a.x, z - a.z) > a.r + extra);
-  const avoid = [{ x: 0, z: 8, r: 6 }];
+  const avoid = [{ x: 0, z: 8, r: 6 }, { x: 14, z: -12, r: 6 }, { x: -18, z: 16, r: 6 }];
 
   // 뒤틀린 나무 + 바위 — 무너진 구조물 사이로 침식한 초목, 절반가량 타락
   for (let i = 0; i < 40; i++) {
@@ -1475,6 +1622,16 @@ export function createRuinsWorld() {
   ruin2.rotation.y = Math.random() * Math.PI * 2;
   scene.add(ruin2);
   const ruinCores = [ruin1.userData.core, ruin2.userData.core];
+
+  // 무너진 기둥/잔해 군집 — 두 룬 서클 사이사이를 채워 폐허가 더 넓고 채워진 느낌을 주도록
+  for (let i = 0; i < 7; i++) {
+    const { x, z } = scatterPoint(8, RUINS_RADIUS - 5);
+    if (!isClear(x, z, avoid, 2)) continue;
+    const pillars = createRuinPillarCluster();
+    pillars.position.set(x, 0, z);
+    pillars.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(pillars);
+  }
 
   // 타락 결정체 — 폐허 곳곳에 스며든 오염
   const crystals = [];
@@ -1525,18 +1682,23 @@ export const ABYSS_RADIUS = 42;
 export function createAbyssWorld() {
   const scene = new THREE.Scene();
   setupBaseEnvironment(scene, {
-    skyColor: PALETTE.abyssSky, groundColor: PALETTE.abyssGround, fogNear: 14, fogFar: 65,
-    sunColor: 0x8a5fd0, sunIntensity: 0.6, hemiIntensity: 1.3,
+    skyColor: PALETTE.abyssSky, groundColor: PALETTE.abyssGround, fogNear: 17, fogFar: 85,
+    sunColor: 0x9a7fd0, sunIntensity: 0.95, hemiIntensity: 1.7,
   });
 
-  // 결정체 빛 외엔 거의 보이지 않도록 약한 보라빛 채움광만
-  const fillLight = new THREE.PointLight(0x7a3fb0, 1.3, 60);
+  // 결정체 빛만으론 시야 확보가 안 돼서(너무 어두워 아예 안 보임) 중앙 채움광 + 외곽 보조광 2개로 나눠 고르게 밝힘
+  const fillLight = new THREE.PointLight(0x8a5fd0, 2, 75);
   fillLight.position.set(0, 12, 0);
   scene.add(fillLight);
+  for (const [x, z] of [[18, 16], [-18, -16]]) {
+    const side = new THREE.PointLight(0x9a6fd0, 1.2, 45);
+    side.position.set(x, 9, z);
+    scene.add(side);
+  }
 
-  // 짙게 내려앉은 암반 천장 — 동굴보다 낮고 더 불투명
+  // 짙게 내려앉은 암반 천장 — 동굴보다 낮지만, 시야를 완전히 가릴 정도로 어둡진 않게
   const ceilingMat = new THREE.MeshBasicMaterial({
-    color: 0x08050c, transparent: true, opacity: 0.86, side: THREE.DoubleSide, depthWrite: false,
+    color: 0x140e1e, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false,
   });
   const ceiling = new THREE.Mesh(new THREE.CircleGeometry(ABYSS_RADIUS + 8, 32), ceilingMat);
   ceiling.rotation.x = Math.PI / 2;
@@ -1564,8 +1726,8 @@ export function createAbyssWorld() {
     scene.add(rock);
   }
 
-  // 둘러싼 암벽 (탈출 불가 경계, 동굴과 동일한 패턴)
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x0c0810, flatShading: true });
+  // 둘러싼 암벽 (탈출 불가 경계, 동굴과 동일한 패턴) — 완전한 검정 대신 톤을 살짝 올려 실루엣이 보이게
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x1e1628, flatShading: true });
   const wallSegments = 18;
   for (let i = 0; i < wallSegments; i++) {
     const angle = (i / wallSegments) * Math.PI * 2;
@@ -1573,6 +1735,27 @@ export function createAbyssWorld() {
     wall.position.set(Math.cos(angle) * (ABYSS_RADIUS + 3), 0, Math.sin(angle) * (ABYSS_RADIUS + 3));
     wall.rotation.y = Math.random() * Math.PI * 2;
     scene.add(wall);
+  }
+
+  // 공중에 떠 있는 타락 파편 — 심연다운 비현실적인 스카이라인을 더함
+  const spires = [];
+  for (let i = 0; i < 10; i++) {
+    const { x, z } = scatterPoint(5, ABYSS_RADIUS - 4);
+    const spire = createFloatingSpire();
+    const baseY = 4 + Math.random() * 6;
+    spire.position.set(x, baseY, z);
+    scene.add(spire);
+    spires.push({ mesh: spire, baseY, phase: Math.random() * Math.PI * 2 });
+  }
+
+  // 바닥 균열 — 은은하게 빛나 길을 밝히는 랜드마크 겸 조명
+  const rifts = [];
+  for (let i = 0; i < 8; i++) {
+    const { x, z } = scatterPoint(4, ABYSS_RADIUS - 3);
+    const rift = createRiftCrack();
+    rift.position.set(x, 0, z);
+    scene.add(rift);
+    rifts.push(rift);
   }
 
   const motes = setupMotes(scene, 20, ABYSS_RADIUS - 4, true);
@@ -1583,7 +1766,14 @@ export function createAbyssWorld() {
     updateMotes(motes, dt, elapsed);
     for (const crystal of crystals) {
       const mat = crystal.userData.mat;
-      mat.emissiveIntensity = 0.7 + Math.sin(elapsed * 2.4 + crystal.position.x) * 0.45;
+      mat.emissiveIntensity = 1 + Math.sin(elapsed * 2.4 + crystal.position.x) * 0.45;
+    }
+    for (const rift of rifts) {
+      rift.userData.mat.emissiveIntensity = 1.1 + Math.sin(elapsed * 1.8 + rift.position.x) * 0.5;
+    }
+    for (const s of spires) {
+      s.mesh.position.y = s.baseY + Math.sin(elapsed * 0.6 + s.phase) * 0.6;
+      s.mesh.rotation.y += dt * 0.15;
     }
   }
 
@@ -1598,9 +1788,16 @@ export const RIFT_RADIUS = 44;
 export function createRiftWorld() {
   const scene = new THREE.Scene();
   setupBaseEnvironment(scene, {
-    skyColor: PALETTE.riftSky, groundColor: PALETTE.riftGround, fogNear: 16, fogFar: 80,
-    sunColor: 0xdff2ff, sunIntensity: 0.7, hemiIntensity: 0.5,
+    skyColor: PALETTE.riftSky, groundColor: PALETTE.riftGround, fogNear: 18, fogFar: 95,
+    sunColor: 0xdff2ff, sunIntensity: 1, hemiIntensity: 0.9,
   });
+
+  // 중심의 균열광(riftLight)이 반경(26) 밖까지는 못 미쳐서, 스테이지 외곽용 보조 채움광 2개를 추가
+  for (const [x, z] of [[22, 20], [-22, -20]]) {
+    const edgeLight = new THREE.PointLight(0x7fb0ff, 1.1, 42);
+    edgeLight.position.set(x, 10, z);
+    scene.add(edgeLight);
+  }
 
   // 중심의 균열 — 부유하는 룬 파편 고리 + 맥동하는 코어. 이 스테이지의 랜드마크
   const riftGroup = new THREE.Group();
@@ -1657,8 +1854,8 @@ export function createRiftWorld() {
     ruinCores.push(ruin.userData.core);
   }
 
-  // 둘러싼 암벽 (탈출 불가 경계)
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x0a0a12, flatShading: true });
+  // 둘러싼 암벽 (탈출 불가 경계) — 배경 하늘과 구분이 가도록 완전한 검정에서 살짝 띄움
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x1c1c2c, flatShading: true });
   const wallSegments = 18;
   for (let i = 0; i < wallSegments; i++) {
     const angle = (i / wallSegments) * Math.PI * 2;
