@@ -3,6 +3,95 @@ import { SKILL_TREE } from './skillTree.js';
 
 const SKILL_KEY_LABEL = { KeyQ: 'Q', KeyE: 'E', Space: 'Space', KeyR: 'R' };
 
+// 상점 코스메틱 아이콘 — 색깔 원 하나로는 스타일(형태) 차이가 안 보이므로, 슬롯+style별로 실제
+// 실루엣을 닮은 미니 SVG를 그려서 보여준다. player.js의 buildWeaponParts/buildCapeParts/buildRuneParts와
+// 짝이 되는 2D 미리보기 버전 — 3D 지오메트리가 바뀌면 여기 아이콘도 같이 챙겨줘야 함.
+function hex(n) {
+  return '#' + (n ?? 0).toString(16).padStart(6, '0');
+}
+
+const WEAPON_ICON_HILT = `
+  <rect x="9" y="14" width="6" height="2" fill="#1c2836"/>
+  <rect x="10.5" y="16" width="3" height="5" fill="#241a12"/>
+`;
+
+const WEAPON_ICONS = {
+  straight: (c, glow) => `${WEAPON_ICON_HILT}
+    <polygon points="10,14 10,5 12,2 14,5 14,14" fill="${c}" stroke="${glow}" stroke-width="0.5"/>
+    <circle cx="12" cy="21.4" r="1.3" fill="${c}"/>`,
+  fang: (c, glow) => `${WEAPON_ICON_HILT}
+    <path d="M10,14 C9,10 9,6 11,3 C11.5,2.3 12.5,2.3 13,3 C15,6 15,10 14,14 Z" fill="${c}" stroke="${glow}" stroke-width="0.4"/>
+    <polygon points="10.3,4.2 8.4,2 10,5.8" fill="${c}"/>
+    <polygon points="13.7,4.2 15.6,2 14,5.8" fill="${c}"/>
+    <circle cx="12" cy="21.4" r="1.3" fill="${c}"/>`,
+  serrated: (c, glow) => `${WEAPON_ICON_HILT}
+    <polygon points="10,14 10,3 12.5,3 12.5,5 14.2,5.6 12.5,6.8 14.2,8 12.5,9.2 14.2,10.4 12.5,11.6 14.2,12.6 12.5,14"
+      fill="${c}" stroke="${glow}" stroke-width="0.4"/>
+    <circle cx="12" cy="21.4" r="1.3" fill="${c}"/>`,
+  emberCore: (c, glow) => `${WEAPON_ICON_HILT}
+    <polygon points="12,2 15,5.2 13.3,8.5 12,7 10.7,8.5 9,5.2" fill="#201a16"/>
+    <polygon points="12,7.5 14.2,10.5 12,13.5 9.8,10.5" fill="#201a16"/>
+    <circle cx="12" cy="9.5" r="1.7" fill="${glow}"/>
+    <circle cx="12" cy="21.4" r="1.3" fill="${c}"/>`,
+  voidShard: (c, glow) => `${WEAPON_ICON_HILT}
+    <rect x="11.3" y="3" width="1.4" height="11" fill="#140c22"/>
+    <polygon points="8.2,6.5 9.6,7.9 8.2,9.3 6.8,7.9" fill="${c}" opacity="0.9"/>
+    <polygon points="16.8,9.5 18.2,10.9 16.8,12.3 15.4,10.9" fill="${c}" opacity="0.9"/>
+    <polygon points="9.8,12 11.2,13.4 9.8,14.8 8.4,13.4" fill="${c}" opacity="0.9"/>
+    <circle cx="12" cy="21.4" r="1.3" fill="${glow}"/>`,
+};
+
+const CAPE_ICONS = {
+  twin: (c, c2) => `
+    <polygon points="12,3 19,19 5,19" fill="${c}"/>
+    <polygon points="12,6 16,18 8,18" fill="${c2}"/>`,
+  tattered: (c, c2) => `
+    <polygon points="12,3 19,16 16.5,14.5 17.5,19.5 13.5,15.5 12.5,20 9.5,15.5 6.5,19.5 7.5,14.5 5,16" fill="${c}"/>
+    <polygon points="12,6 15.5,15.5 12,18.5 8.5,15.5" fill="${c2}"/>`,
+  wisp: (c, c2) => `
+    <polygon points="12,5 17,17 7,17" fill="${c}"/>
+    <polygon points="12,8 14.5,16 9.5,16" fill="${c2}"/>
+    <circle cx="7" cy="19.2" r="1" fill="${c2}"/>
+    <circle cx="12" cy="20.6" r="1.2" fill="${c2}"/>
+    <circle cx="17" cy="19.2" r="1" fill="${c2}"/>`,
+  shard: (c, c2) => `
+    <polygon points="9,6 11.4,2 10.2,6.6" fill="${c2}"/>
+    <polygon points="12,5 13.4,1 13,6.4" fill="${c2}"/>
+    <polygon points="15,6 16.6,2.6 15.8,6.6" fill="${c2}"/>
+    <polygon points="12,5 19,19 5,19" fill="${c}"/>
+    <polygon points="12,8 16,18 8,18" fill="${c2}"/>`,
+  leaf: (c, c2) => `
+    <polygon points="12,3 19,19 5,19" fill="${c}"/>
+    <polygon points="12,6 16,18 8,18" fill="${c2}"/>
+    <ellipse cx="7.2" cy="11" rx="1.6" ry="0.9" fill="${c2}" transform="rotate(-30 7.2 11)"/>
+    <ellipse cx="16.8" cy="11" rx="1.6" ry="0.9" fill="${c2}" transform="rotate(30 16.8 11)"/>
+    <ellipse cx="9.2" cy="16.5" rx="1.6" ry="0.9" fill="${c2}" transform="rotate(-20 9.2 16.5)"/>`,
+};
+
+const RUNE_ICONS = {
+  octa: (c, glow) => `<polygon points="12,4 18,12 12,20 6,12" fill="${c}" stroke="${glow}" stroke-width="0.5"/>`,
+  flame: (c, glow) => `<path d="M12,3 C17,9 16,14 12,20 C8,14 7,9 12,3 Z" fill="${c}" stroke="${glow}" stroke-width="0.4"/>`,
+  ring: (c) => `<circle cx="12" cy="12" r="6.8" fill="none" stroke="${c}" stroke-width="2.2"/><circle cx="12" cy="12" r="2.2" fill="${c}"/>`,
+  spike: (c) => `
+    <polygon points="12,12 10.2,4.5 13.8,4.5" fill="${c}"/>
+    <polygon points="12,12 19.5,15 19,18.6" fill="${c}"/>
+    <polygon points="12,12 4.5,15 5,18.6" fill="${c}"/>`,
+  facet: (c, glow) => `
+    <polygon points="12,3 18,7 18,15 12,19 6,15 6,7" fill="${c}"/>
+    <polygon points="12,3 18,7 12,11 6,7" fill="${glow}" opacity="0.55"/>`,
+};
+
+function buildItemIconSVG(item) {
+  const c = hex(item.color);
+  const c2 = hex(item.color2 ?? item.emissive ?? item.color);
+  const glow = hex(item.emissive ?? item.color);
+  const table = item.slot === 'weapon' ? WEAPON_ICONS : item.slot === 'cape' ? CAPE_ICONS : RUNE_ICONS;
+  const fallbackStyle = item.slot === 'weapon' ? 'straight' : item.slot === 'cape' ? 'twin' : 'octa';
+  const build = table[item.style] ?? table[fallbackStyle];
+  const inner = item.slot === 'cape' ? build(c, c2) : build(c, glow);
+  return `<svg width="40" height="40" viewBox="0 0 24 24">${inner}</svg>`;
+}
+
 export class UI {
   constructor(root) {
     this.root = root;
@@ -10,8 +99,10 @@ export class UI {
     this._buildHUD();
     this._buildSkillPanel();
     this._buildHubBar();
+    this._buildStageExitButton();
     this._buildStageSelectPanel();
     this._buildShopPanel();
+    this._buildInventoryPanel();
     this._buildDeathScreen();
     this._buildVictoryScreen();
     this._buildInstructions();
@@ -22,7 +113,7 @@ export class UI {
 
   // 스킬 패널이나 튜토리얼처럼 화면을 덮는 오버레이가 떠 있는 동안은 게임 진행을 멈춰야 함
   isPaused() {
-    return this.panelOpen || this.tutorialOpen || this.stageSelectOpen || this.shopOpen;
+    return this.panelOpen || this.tutorialOpen || this.stageSelectOpen || this.shopOpen || this.inventoryOpen;
   }
 
   _buildHUD() {
@@ -241,15 +332,37 @@ export class UI {
         background: rgba(200,150,50,0.85); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
         color: #fff; font-size: 14px; font-weight: 700; padding: 10px 20px; cursor: pointer;
       ">상점 · 꾸미기</button>
+      <button id="hubInventoryBtn" style="
+        background: rgba(110,80,170,0.85); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+        color: #fff; font-size: 14px; font-weight: 700; padding: 10px 20px; cursor: pointer;
+      ">장비</button>
     `;
     this.root.appendChild(wrap);
     this.hubBarEl = wrap;
     this.hubStageBtn = wrap.querySelector('#hubStageBtn');
     this.hubShopBtn = wrap.querySelector('#hubShopBtn');
+    this.hubInventoryBtn = wrap.querySelector('#hubInventoryBtn');
   }
 
   setHubBarVisible(visible) {
     this.hubBarEl.style.display = visible ? 'flex' : 'none';
+  }
+
+  // 스테이지 진행 중 클리어/사망 없이도 언제든 허브로 돌아갈 수 있는 탈출 버튼
+  _buildStageExitButton() {
+    const btn = document.createElement('button');
+    btn.textContent = '↩ 허브로 나가기';
+    btn.style.cssText = `
+      position: absolute; top: 20px; left: 20px; display: none;
+      background: rgba(20,20,30,0.6); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+      color: #fff; font-size: 13px; font-weight: 600; padding: 8px 14px; cursor: pointer; z-index: 5;
+    `;
+    this.root.appendChild(btn);
+    this.stageExitBtn = btn;
+  }
+
+  setStageExitVisible(visible) {
+    this.stageExitBtn.style.display = visible ? 'block' : 'none';
   }
 
   _buildStageSelectPanel() {
@@ -360,13 +473,13 @@ export class UI {
         background: ${equipped ? '#2f6f4f' : '#242430'}; border: 1px solid ${equipped ? '#4fd18a' : 'rgba(255,255,255,0.1)'};
         border-radius: 8px; padding: 10px; display:flex; flex-direction:column; gap:6px; align-items:center;
       `;
-      const swatch = document.createElement('div');
-      swatch.style.cssText = `
-        width: 36px; height: 36px; border-radius: 50%;
-        background: #${item.color.toString(16).padStart(6, '0')};
-        box-shadow: 0 0 10px #${(item.emissive ?? item.color).toString(16).padStart(6, '0')};
+      const iconWrap = document.createElement('div');
+      iconWrap.style.cssText = `
+        width: 48px; height: 48px; border-radius: 10px; display:flex; align-items:center; justify-content:center;
+        background: rgba(0,0,0,0.3); box-shadow: 0 0 12px ${hex(item.emissive ?? item.color)}55, inset 0 0 0 1px rgba(255,255,255,0.06);
       `;
-      card.appendChild(swatch);
+      iconWrap.innerHTML = buildItemIconSVG(item);
+      card.appendChild(iconWrap);
       const name = document.createElement('div');
       name.style.cssText = 'font-size:12px; font-weight:700; text-align:center;';
       name.textContent = item.name;
@@ -392,6 +505,111 @@ export class UI {
       card.appendChild(btn);
       this.shopGridEl.appendChild(card);
     }
+  }
+
+  // --- 장비(전투 스탯) 인벤토리 패널 — 상점 코스메틱과 별개, 몬스터/보스 드랍템을 장착 ---
+  _buildInventoryPanel() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: absolute; inset: 0; background: rgba(5,5,10,0.75);
+      display: none; align-items: center; justify-content: center; z-index: 10;
+    `;
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background: #1b1b26; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      padding: 24px 28px; width: 640px; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+      color: #fff; font-family: inherit; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    `;
+    panel.innerHTML = `
+      <div style="font-size:18px; font-weight:700; margin-bottom:14px;">장비</div>
+      <div id="gearSlotGrid" style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom:18px;"></div>
+      <div style="font-size:12px; color:#8a8a9a; margin-bottom:8px;">보유 아이템 — 클릭해서 장착</div>
+      <div id="gearOwnedGrid" style="display:grid; grid-template-columns: repeat(3, 1fr); gap: 10px;"></div>
+      <div style="margin-top:14px; font-size:12px; color:#8a8a9a;">몬스터·보스를 처치하면 확률로 드랍됩니다. 닫으려면 바깥을 클릭하세요</div>
+    `;
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this.toggleInventory(false);
+    });
+    this.root.appendChild(overlay);
+    this.inventoryEl = overlay;
+    this.gearSlotGridEl = panel.querySelector('#gearSlotGrid');
+    this.gearOwnedGridEl = panel.querySelector('#gearOwnedGrid');
+    this.inventoryOpen = false;
+  }
+
+  toggleInventory(open = !this.inventoryOpen) {
+    this.inventoryOpen = open;
+    this.inventoryEl.style.display = open ? 'flex' : 'none';
+  }
+
+  renderInventoryPanel(equipState, items, onEquip, onUnequip) {
+    const SLOT_LABEL = { weapon: '무기', armor: '방어구', trinket: '장신구' };
+    const RARITY_COLOR = { common: '#9fb0c0', rare: '#ffd166' };
+
+    this.gearSlotGridEl.innerHTML = '';
+    for (const slot of Object.keys(SLOT_LABEL)) {
+      const itemId = equipState.equipped[slot];
+      const item = items.find((i) => i.id === itemId);
+      const box = document.createElement('div');
+      box.style.cssText = `
+        background: #242430; border: 1px solid ${item ? '#4fd18a' : 'rgba(255,255,255,0.1)'};
+        border-radius: 8px; padding: 10px; font-size: 12px; text-align:center; cursor: ${item ? 'pointer' : 'default'};
+      `;
+      box.innerHTML = `
+        <div style="color:#8a8a9a; margin-bottom:4px;">${SLOT_LABEL[slot]}</div>
+        <div style="font-weight:700; color:${item ? RARITY_COLOR[item.rarity] : '#5a5a6a'};">${item ? item.name : '(비어있음)'}</div>
+      `;
+      if (item) box.addEventListener('click', () => onUnequip(slot));
+      this.gearSlotGridEl.appendChild(box);
+    }
+
+    this.gearOwnedGridEl.innerHTML = '';
+    const owned = items.filter((i) => equipState.isOwned(i.id));
+    if (owned.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'grid-column: 1 / -1; font-size:12px; color:#5a5a6a; text-align:center; padding:10px 0;';
+      empty.textContent = '아직 보유한 장비가 없습니다';
+      this.gearOwnedGridEl.appendChild(empty);
+    }
+    for (const item of owned) {
+      const equipped = equipState.equipped[item.slot] === item.id;
+      const card = document.createElement('button');
+      card.style.cssText = `
+        background: ${equipped ? '#2f6f4f' : '#242430'}; border: 1px solid ${equipped ? '#4fd18a' : 'rgba(255,255,255,0.1)'};
+        border-radius: 8px; padding: 10px; font-size: 12px; text-align:left; cursor: pointer; color:#fff;
+      `;
+      const statsLine = Object.entries(item.stats).map(([k, v]) => formatGearStat(k, v)).join(' · ');
+      card.innerHTML = `
+        <div style="font-weight:700; margin-bottom:2px; color:${RARITY_COLOR[item.rarity]};">${item.name}</div>
+        <div style="color:#9fb0c0;">${statsLine}</div>
+        <div style="margin-top:4px; color:${equipped ? '#bfffcf' : '#7ad9ff'};">${equipped ? '장착중' : '장착하기'}</div>
+      `;
+      if (!equipped) card.addEventListener('click', () => onEquip(item.id));
+      this.gearOwnedGridEl.appendChild(card);
+    }
+  }
+
+  // 아이템 드랍 시 잠깐 뜨는 토스트 (스테이지 클리어 배너와 같은 자리, 겹치면 나중 것이 덮어씀)
+  showLoot(item) {
+    if (!this.lootToastEl) {
+      const el = document.createElement('div');
+      el.style.cssText = `
+        position: absolute; top: 130px; left: 50%; transform: translate(-50%, 0);
+        color: #fff; font-size: 14px; font-weight: 700; text-align: center; pointer-events: none;
+        text-shadow: 0 1px 3px rgba(0,0,0,0.8); background: rgba(0,0,0,0.55);
+        padding: 8px 16px; border-radius: 8px; display: none; z-index: 8;
+      `;
+      this.root.appendChild(el);
+      this.lootToastEl = el;
+    }
+    const rarityColor = item.rarity === 'rare' ? '#ffd166' : '#9fb0c0';
+    this.lootToastEl.innerHTML = `아이템 획득 — <span style="color:${rarityColor};">${item.name}</span>`;
+    this.lootToastEl.style.display = 'block';
+    clearTimeout(this._lootToastTimer);
+    this._lootToastTimer = setTimeout(() => {
+      this.lootToastEl.style.display = 'none';
+    }, 2200);
   }
 
   _buildDeathScreen() {
@@ -725,6 +943,17 @@ export class UI {
       }
     }
   }
+}
+
+const GEAR_STAT_LABEL = {
+  atkMult: '공격력', maxHpAdd: '최대체력', critChance: '치명타 확률',
+  damageReduction: '피해 감소', moveSpeedMult: '이동속도',
+};
+
+function formatGearStat(key, value) {
+  const label = GEAR_STAT_LABEL[key] ?? key;
+  const text = key === 'maxHpAdd' ? `+${value}` : `+${Math.round(value * 100)}%`;
+  return `${label} ${text}`;
 }
 
 function findNodeByKey(code) {

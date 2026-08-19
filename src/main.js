@@ -4,6 +4,9 @@ import {
   createHubWorld,
   createPlainsWorld,
   createCaveWorld,
+  createRuinsWorld,
+  createAbyssWorld,
+  createRiftWorld,
   WORLD_RADIUS,
   FINAL_BOSS_POS,
   COLOSSEUM_ENTRANCE_ANGLE,
@@ -23,13 +26,54 @@ import { supabase } from './supabaseClient.js';
 import { loadSave, saveProgress } from './save.js';
 import { STAGES, getStage, isStageUnlocked } from './stages.js';
 import { ShopState, COSMETIC_ITEMS, resolveCosmetics } from './shop.js';
+import { EquipmentState, GEAR_ITEMS, rollGearDrop } from './equipment.js';
 
 const SKILL_KEYS = ['KeyQ', 'KeyE', 'Space', 'KeyR'];
 
 const appEl = document.getElementById('app');
 
+// 스테이지별 씬 빌더 — enterGenericStage에서 stageId로 조회
+const STAGE_BUILDERS = {
+  plains: createPlainsWorld,
+  cave: createCaveWorld,
+  ruins: createRuinsWorld,
+  abyss: createAbyssWorld,
+  rift: createRiftWorld,
+};
+// 스테이지별 플레이어 진입 지점 z좌표 — 지정 없으면 8 기본값
+const STAGE_SPAWN_Z = { cave: 20, ruins: 10, abyss: 12, rift: 10 };
+
+// 새 스테이지 보스는 대부분 기존 보스 클래스를 스탯만 바꿔 재사용한다(비주얼은 디자인 담당 몫) —
+// Boss/SporeQueen/CaveTyrant 생성자가 opts로 체력/피해량/이동속도/몸통 색조까지 받도록 되어 있어
+// 새 지오메트리 없이도 스테이지 난이도에 맞는 보스를 만들 수 있다.
 function createBossByKind(kind, scene, pos) {
   if (kind === 'caveTyrant') return new CaveTyrant(scene, pos);
+  if (kind === 'plainsWarden') {
+    return new Boss(scene, pos, {
+      name: '초원의 파수꾼', maxHp: 260, xpReward: 95, hitRadius: 1.3,
+      slamDamage: 14, chargeDamage: 16, bodyColor: 0x5c6b3a,
+    });
+  }
+  if (kind === 'ruinsWarden') {
+    return new SporeQueen(scene, pos, {
+      name: '폐허의 포자 파수꾼', maxHp: 560, xpReward: 270,
+      moveSpeed: 3.6, projectileDamage: 13, poolDps: 16, bodyColor: 0x7a8a4a,
+    });
+  }
+  if (kind === 'abyssTyrant') {
+    return new CaveTyrant(scene, pos, {
+      name: '심연의 폭군', maxHp: 980, xpReward: 360, moveSpeed: 2.9,
+      slamDamage: 34, chargeDamage: 40, eruptDamage: 32, bodyColor: 0x180a22,
+    });
+  }
+  if (kind === 'primordialDestroyer') {
+    // 최종보스(타락한 대곰)보다 더 강한 개체 — 콜로세움 결계가 없는 일반 스테이지라 sealed:false 필수
+    return new CorruptedBear(scene, pos, {
+      name: '태초의 파괴자', maxHp: 2200, xpReward: 650, moveSpeed: 3.1, hitRadius: 2.0,
+      slamDamage: 42, chargeDamage: 48, burstDamage: 18, novaDamage: 46,
+      bodyColor: 0xc8e8ff, sealed: false,
+    });
+  }
   throw new Error(`알 수 없는 보스 종류: ${kind}`);
 }
 
@@ -65,6 +109,7 @@ async function main() {
   const input = new Input(renderer.domElement);
   const skillState = new SkillTreeState();
   const shopState = new ShopState();
+  const equipState = new EquipmentState();
 
   const ui = new UI(appEl);
   ui.buildAccountBar(user.user_metadata?.username || user.email, () => {
@@ -103,6 +148,8 @@ async function main() {
       clearedStages: Array.from(clearedStages),
       ownedCosmetics: Array.from(shopState.owned),
       equippedCosmetics: shopState.equipped,
+      ownedGear: Array.from(equipState.owned),
+      equippedGear: equipState.equipped,
     });
   }
   setInterval(() => flushSave(), 5000);
@@ -114,11 +161,16 @@ async function main() {
   const existingSave = await loadSave(user.id);
   if (existingSave) {
     skillState.loadState(existingSave);
+    equipState.loadState(existingSave);
+    player.gearBonus = equipState.getBonusStats(); // loadProgress가 recalcStats를 호출하므로 그 전에 세팅
     player.loadProgress(existingSave, skillState);
     shopState.loadState(existingSave);
     for (const id of existingSave.cleared_stages ?? []) clearedStages.add(id);
     for (const id of existingSave.defeated_bosses ?? []) defeatedBossIds.add(id);
     if (existingSave.colosseum_cleared) colosseumCleared = true;
+    // 'corrupt' 클리어 기록은 이 기능 이전엔 저장된 적이 없었으므로, 이미 최종보스를 처치한
+    // 기존 계정도 소급 적용되도록 defeatedBossIds로부터 역산 — 그래야 다음 스테이지가 열림
+    if (defeatedBossIds.has('finalBoss')) clearedStages.add('corrupt');
   } else {
     await flushSave(true);
   }
@@ -157,6 +209,34 @@ async function main() {
     }
   }
 
+  // 장비(전투 스탯) 장착/해제 — 코스메틱과 달리 recalcStats를 다시 태워야 스탯에 반영됨
+  function onEquipGear(id) {
+    if (equipState.equip(id)) {
+      player.gearBonus = equipState.getBonusStats();
+      player.recalcStats(skillState);
+      markDirty();
+      ui.renderInventoryPanel(equipState, GEAR_ITEMS, onEquipGear, onUnequipGear);
+    }
+  }
+
+  function onUnequipGear(slot) {
+    if (equipState.unequip(slot)) {
+      player.gearBonus = equipState.getBonusStats();
+      player.recalcStats(skillState);
+      markDirty();
+      ui.renderInventoryPanel(equipState, GEAR_ITEMS, onEquipGear, onUnequipGear);
+    }
+  }
+
+  // 몬스터/보스 처치 시 장비 드랍 굴림 — 얻으면 즉시 보유 목록에 추가하고 토스트로 알림
+  function rollAndGrantDrop(tier, isBoss) {
+    const drop = rollGearDrop(tier, isBoss);
+    if (!drop) return;
+    equipState.addDrop(drop.id);
+    markDirty();
+    ui.showLoot(drop);
+  }
+
   ui.hubStageBtn.addEventListener('click', () => {
     ui.renderStageSelect(
       STAGES,
@@ -172,6 +252,12 @@ async function main() {
     ui.renderShopPanel(shopState, COSMETIC_ITEMS, onBuyItem, onEquipItem);
     ui.toggleShop(true);
   });
+  ui.hubInventoryBtn.addEventListener('click', () => {
+    ui.renderInventoryPanel(equipState, GEAR_ITEMS, onEquipGear, onUnequipGear);
+    ui.toggleInventory(true);
+  });
+  // 클리어/사망 없이도 스테이지 중간에 언제든 허브로 돌아갈 수 있는 탈출 버튼
+  ui.stageExitBtn.addEventListener('click', () => goToHub());
 
   function handleSpecialProc(hits) {
     if (!hits || hits.length === 0) return;
@@ -212,6 +298,7 @@ async function main() {
       enemies: [], bosses: [], allTargets: [],
     };
     ui.setHubBarVisible(true);
+    ui.setStageExitVisible(false);
     ui.setGateHint(null);
     snapCamera();
   }
@@ -219,10 +306,10 @@ async function main() {
   // 초원(plains) / 동굴(cave) 등 데이터 기반 일반 스테이지 입장
   function enterGenericStage(stageId) {
     const stage = getStage(stageId);
-    const builder = stageId === 'cave' ? createCaveWorld : createPlainsWorld;
+    const builder = STAGE_BUILDERS[stageId] ?? createPlainsWorld;
     const world = builder();
     world.scene.add(player.group);
-    player.group.position.set(0, 0, stageId === 'cave' ? 20 : 8);
+    player.group.position.set(0, 0, STAGE_SPAWN_Z[stageId] ?? 8);
 
     const enemies = stage.enemySpawns.map(
       ({ pos: [x, z], kind }) => new Enemy(world.scene, new THREE.Vector3(x, 0, z), { kind })
@@ -240,11 +327,13 @@ async function main() {
       bossKilled: new Array(bosses.length).fill(false),
     };
     ui.setHubBarVisible(false);
+    ui.setStageExitVisible(true);
     ui.setGateHint(null);
     snapCamera();
   }
 
   function tickGenericStage(dt) {
+    const tier = getStage(ctx.stageId).tier ?? 1;
     for (let i = 0; i < ctx.enemies.length; i++) {
       const enemy = ctx.enemies[i];
       if (enemy.isDead) {
@@ -252,6 +341,7 @@ async function main() {
         if (!enemy.xpGranted) {
           enemy.xpGranted = true;
           player.gainXp(enemy.xpReward, skillState);
+          rollAndGrantDrop(tier, false);
           markDirty();
         }
       }
@@ -263,11 +353,17 @@ async function main() {
         if (!boss.xpGranted) {
           boss.xpGranted = true;
           player.gainXp(boss.xpReward, skillState);
+          rollAndGrantDrop(tier, true);
           markDirty();
         }
       }
     }
-    if (!ctx.cleared && ctx.enemyKilled.every(Boolean) && ctx.bossKilled.every(Boolean)) {
+    // 보스가 있는 스테이지는 보스만 잡으면 클리어 — 일반 몬스터는 경험치/드랍용 잡몹이 됨.
+    // 보스가 없는 스테이지(현재는 없음)에 한해 기존처럼 전체 처치를 요구하는 걸로 폴백.
+    const stageCleared = ctx.bosses.length > 0
+      ? ctx.bossKilled.every(Boolean)
+      : ctx.enemyKilled.every(Boolean);
+    if (!ctx.cleared && stageCleared) {
       ctx.cleared = true;
       const stage = getStage(ctx.stageId);
       const reward = stage.clearReward?.coins ?? 0;
@@ -319,6 +415,9 @@ async function main() {
     const enemies = [colosseumGolem1, colosseumGolem2];
     const bosses = [runeGuardian, sporeQueen, finalBoss];
     const allTargets = [...enemies, ...bosses];
+    // golem은 시간이 지나면 리스폰하므로(enemy.js) 매 틱의 isDead만 보면 "넷이 동시에 죽어있는 순간"이
+    // 영영 안 올 수 있다 — 한 번이라도 죽었으면 계속 true로 남는 배열로 따로 추적해야 결계가 안전하게 풀린다.
+    const colosseumEverKilled = new Array(colosseumMonsters.length).fill(false);
 
     if (finalBoss.isDead) {
       victoryTriggered = true;
@@ -337,7 +436,10 @@ async function main() {
       for (const m of colosseumMonsters) containInColosseum(m);
       containInColosseum(finalBoss);
 
-      if (!colosseumCleared && colosseumMonsters.every((m) => m.isDead)) {
+      for (let i = 0; i < colosseumMonsters.length; i++) {
+        if (colosseumMonsters[i].isDead) colosseumEverKilled[i] = true;
+      }
+      if (!colosseumCleared && colosseumEverKilled.every(Boolean)) {
         colosseumCleared = true;
         markDirty();
       }
@@ -345,6 +447,7 @@ async function main() {
         if (enemy.isDead && !enemy.xpGranted) {
           enemy.xpGranted = true;
           player.gainXp(enemy.xpReward, skillState);
+          rollAndGrantDrop(5, false); // 타락지대·성은 equipment.js 최종 등급(tier 5) 드랍
           markDirty();
         }
       }
@@ -352,12 +455,14 @@ async function main() {
         if (boss.isDead && !boss.xpGranted) {
           boss.xpGranted = true;
           player.gainXp(boss.xpReward, skillState);
+          rollAndGrantDrop(5, true);
           if (boss.saveId) defeatedBossIds.add(boss.saveId);
           markDirty();
         }
       }
       if (!victoryTriggered && finalBoss.isDead) {
         victoryTriggered = true;
+        clearedStages.add('corrupt'); // 이후 스테이지(예: 태초의 균열) 잠금 해제 조건으로 쓰임
         world.purify();
         ui.beginVictorySequence();
         flushSave(true);
@@ -381,6 +486,7 @@ async function main() {
       enemies, bosses, allTargets, legacyTick: tick,
     };
     ui.setHubBarVisible(false);
+    ui.setStageExitVisible(true);
     snapCamera();
   }
 

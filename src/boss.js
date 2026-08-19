@@ -48,6 +48,11 @@ export class Boss {
     this.moveSpeed = opts.moveSpeed ?? 2.6;
     this.xpReward = opts.xpReward ?? 220;
     this.hitRadius = opts.hitRadius ?? 1.5; // 거대한 몸집에 맞춘 넉넉한 공격 판정 반경
+    // 슬램/돌진 피해량을 인스턴스별로 튜닝 가능하게 함 — 같은 메시를 재사용해 난이도만 다른
+    // 스테이지 보스를 만들 때(예: 초원 파수꾼) 새 지오메트리 없이 opts만으로 세기를 조절하기 위함
+    this.slamDamage = opts.slamDamage ?? SLAM_DAMAGE;
+    this.chargeDamage = opts.chargeDamage ?? CHARGE_DAMAGE;
+    if (opts.bodyColor != null) this.group.userData.bodyMat.color.setHex(opts.bodyColor);
 
     this.state = 'guard'; // guard -> chase -> slamWindup -> slamRecover / chargeWindup -> charging -> chargeRecover
     this.forward = { x: 0, z: 1 };
@@ -189,7 +194,7 @@ export class Boss {
       this.group.rotation.y = Math.atan2(this.chargeDir.x, this.chargeDir.z);
       const hitDist = Math.hypot(px - this.group.position.x, pz - this.group.position.z);
       if (!this._chargeHit && hitDist < 1.8) {
-        onAttackPlayer(CHARGE_DAMAGE);
+        onAttackPlayer(this.chargeDamage);
         this._chargeHit = true;
       }
       this.timer -= dt;
@@ -245,7 +250,7 @@ export class Boss {
 
   executeSlam(onAttackPlayer, distToPlayer) {
     this.telegraphRing.visible = false;
-    if (distToPlayer <= SLAM_RANGE) onAttackPlayer(SLAM_DAMAGE);
+    if (distToPlayer <= SLAM_RANGE) onAttackPlayer(this.slamDamage);
     this.state = 'slamRecover';
     this.timer = this.phase2 ? SLAM_RECOVER * 0.7 : SLAM_RECOVER;
   }
@@ -461,6 +466,11 @@ export class SporeQueen {
     this.hp = this.maxHp;
     this.xpReward = opts.xpReward ?? 210;
     this.hitRadius = opts.hitRadius ?? 1.4; // 거대한 몸집에 맞춘 넉넉한 공격 판정 반경
+    // Boss와 동일한 이유로 이동속도/피해량을 인스턴스별 튜닝 가능하게 함
+    this.moveSpeed = opts.moveSpeed ?? SQ_KITE_SPEED;
+    this.projectileDamage = opts.projectileDamage ?? SQ_PROJECTILE_DAMAGE;
+    this.poolDps = opts.poolDps ?? SQ_POOL_DPS;
+    if (opts.bodyColor != null) this.group.userData.bodyMat.color.setHex(opts.bodyColor);
 
     this.state = 'guard'; // guard -> chase -> volleyWindup -> volleying -> volleyRecover
     this.timer = 0;
@@ -647,7 +657,7 @@ export class SporeQueen {
       const pdx = px - this.poolPos.x;
       const pdz = pz - this.poolPos.z;
       if (Math.hypot(pdx, pdz) <= SQ_POOL_RADIUS) {
-        onAttackPlayer(SQ_POOL_DPS * dt);
+        onAttackPlayer(this.poolDps * dt);
       }
       if (this.poolTimer <= 0) {
         this.poolState = 'idle';
@@ -707,7 +717,7 @@ export class SporeQueen {
       p.life -= dt;
       const dist = Math.hypot(px - p.mesh.position.x, pz - p.mesh.position.z);
       if (dist <= SQ_PROJECTILE_HIT_RADIUS) {
-        onAttackPlayer(SQ_PROJECTILE_DAMAGE);
+        onAttackPlayer(this.projectileDamage);
         this.scene.remove(p.mesh);
         this.projectiles.splice(i, 1);
       } else if (p.life <= 0) {
@@ -724,8 +734,8 @@ export class SporeQueen {
     if (dist < 0.1) return;
     const nx = dx / dist;
     const nz = dz / dist;
-    this.group.position.x += nx * SQ_KITE_SPEED * (this.phase2 ? 1.2 : 1) * speedMul * dt;
-    this.group.position.z += nz * SQ_KITE_SPEED * (this.phase2 ? 1.2 : 1) * speedMul * dt;
+    this.group.position.x += nx * this.moveSpeed * (this.phase2 ? 1.2 : 1) * speedMul * dt;
+    this.group.position.z += nz * this.moveSpeed * (this.phase2 ? 1.2 : 1) * speedMul * dt;
   }
 
   faceToward(tx, tz) {
@@ -866,6 +876,13 @@ export class CorruptedBear {
     this.moveSpeed = opts.moveSpeed ?? 2.8;
     this.xpReward = opts.xpReward ?? 400;
     this.hitRadius = opts.hitRadius ?? 1.9; // 최종 보스의 거대한 몸집에 맞춘 넉넉한 공격 판정 반경
+    // 다른 보스들과 동일한 이유로 피해량을 인스턴스별 튜닝 가능하게 함 — 이 클래스를 재사용해
+    // 최종 보스보다 더 강한 스테이지 보스를 새 지오메트리 없이 만들 수 있도록 함
+    this.slamDamage = opts.slamDamage ?? CB_SLAM_DAMAGE;
+    this.chargeDamage = opts.chargeDamage ?? CB_CHARGE_DAMAGE;
+    this.burstDamage = opts.burstDamage ?? CB_BURST_DAMAGE;
+    this.novaDamage = opts.novaDamage ?? CB_NOVA_DAMAGE;
+    if (opts.bodyColor != null) this.group.userData.bodyMat.color.setHex(opts.bodyColor);
 
     this.state = 'guard'; // guard -> chase -> slamWindup/slamRecover, chargeWindup/charging/chargeRecover, burstWindup/burstRecover
     this.forward = { x: 0, z: 1 };
@@ -891,7 +908,9 @@ export class CorruptedBear {
     this.slow = null;
     this.xpGranted = false;
 
-    this.sealed = true; // 콜로세움 몬스터가 모두 처치되기 전까지 성 안에서 잠들어 있음
+    // 콜로세움 몬스터가 모두 처치되기 전까지 성 안에서 잠들어 있음 — 일반 스테이지에서 재사용할 때는
+    // opts.sealed:false로 즉시 활성 상태로 스폰할 수 있음
+    this.sealed = opts.sealed ?? true;
   }
 
   takeDamage(amount) {
@@ -1032,7 +1051,7 @@ export class CorruptedBear {
       this.group.rotation.y = Math.atan2(this.chargeDir.x, this.chargeDir.z);
       const hitDist = Math.hypot(px - this.group.position.x, pz - this.group.position.z);
       if (!this._chargeHit && hitDist < 1.9) {
-        onAttackPlayer(CB_CHARGE_DAMAGE);
+        onAttackPlayer(this.chargeDamage);
         this._chargeHit = true;
       }
       this.timer -= dt;
@@ -1066,7 +1085,7 @@ export class CorruptedBear {
         if (this.novaTimer <= 0) {
           this.novaRing.visible = false;
           const hitDist = Math.hypot(px - this.novaRing.position.x, pz - this.novaRing.position.z);
-          if (hitDist <= CB_NOVA_RADIUS) onAttackPlayer(CB_NOVA_DAMAGE);
+          if (hitDist <= CB_NOVA_RADIUS) onAttackPlayer(this.novaDamage);
           this.novaState = 'idle';
           this.novaCdTimer = CB_NOVA_COOLDOWN;
         }
@@ -1120,7 +1139,7 @@ export class CorruptedBear {
 
   executeSlam(onAttackPlayer, distToPlayer) {
     this.telegraphRing.visible = false;
-    if (distToPlayer <= CB_SLAM_RANGE) onAttackPlayer(CB_SLAM_DAMAGE);
+    if (distToPlayer <= CB_SLAM_RANGE) onAttackPlayer(this.slamDamage);
     this.state = 'slamRecover';
     this.timer = this.phase2 ? CB_SLAM_RECOVER * 0.75 : CB_SLAM_RECOVER;
   }
@@ -1171,7 +1190,7 @@ export class CorruptedBear {
       p.life -= dt;
       const dist = Math.hypot(px - p.mesh.position.x, pz - p.mesh.position.z);
       if (dist <= CB_BURST_HIT_RADIUS) {
-        onAttackPlayer(CB_BURST_DAMAGE);
+        onAttackPlayer(this.burstDamage);
         this.scene.remove(p.mesh);
         this.projectiles.splice(i, 1);
       } else if (p.life <= 0) {
@@ -1388,6 +1407,9 @@ export class CaveTyrant extends Boss {
     this.group = buildCaveTyrantMesh();
     this.group.position.copy(spawnPos);
     scene.add(this.group);
+    // Boss 생성자의 bodyColor 재적용은 버려진 룬 수호자 메시에 적용된 것이므로 여기서 새 메시에 다시 적용
+    if (opts.bodyColor != null) this.group.userData.bodyMat.color.setHex(opts.bodyColor);
+    this.eruptDamage = opts.eruptDamage ?? CT_ERUPT_DAMAGE;
     this.eruptCdTimer = 2.5;
     this.eruptZones = []; // { ring, timer, x, z, resolved }
   }
@@ -1435,7 +1457,7 @@ export class CaveTyrant extends Boss {
         z.resolved = true;
         this.scene.remove(z.ring);
         const dist = Math.hypot(px - z.x, pz - z.z);
-        if (dist <= CT_ERUPT_RADIUS) onAttackPlayer(CT_ERUPT_DAMAGE);
+        if (dist <= CT_ERUPT_RADIUS) onAttackPlayer(this.eruptDamage);
         this.eruptZones.splice(i, 1);
       }
     }

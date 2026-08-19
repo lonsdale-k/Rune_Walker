@@ -34,6 +34,10 @@ const AUTH_STYLES = `
   from { opacity: 0; transform: translateY(14px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+@keyframes authEmblemSpin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
 .authInput:focus {
   border-color: #7ad9ff !important;
   box-shadow: 0 0 0 3px rgba(122,217,255,0.15);
@@ -73,6 +77,34 @@ export class AuthScreen {
       animation: authBgDrift 18s ease-in-out infinite;
       display: flex; align-items: center; justify-content: center; overflow: hidden;
     `;
+
+    // 배경 원경 산맥 — 카드 하나만 덩그러니 떠 있지 않도록 화면 하단을 로우폴리 실루엣으로 채움
+    const mountains = document.createElement('div');
+    mountains.style.cssText = 'position:absolute; inset:0; pointer-events:none; overflow:hidden;';
+    mountains.innerHTML = `
+      <svg viewBox="0 0 400 100" preserveAspectRatio="none"
+        style="position:absolute; left:0; bottom:0; width:100%; height:32vh; min-height:150px;">
+        <polygon points="0,100 0,70 55,38 100,66 150,30 205,68 255,34 310,64 360,40 400,58 400,100"
+          fill="#241a34" opacity="0.75"/>
+        <polygon points="0,100 0,86 45,58 90,80 140,50 190,82 245,52 295,80 345,55 400,78 400,100"
+          fill="#150f20" opacity="0.92"/>
+      </svg>
+    `;
+    overlay.appendChild(mountains);
+
+    // 배경 룬 엠블럼 — 카드 뒤에서 은은하게 도는 대형 워터마크로 화면 중앙의 여백을 채움
+    const emblem = document.createElement('div');
+    emblem.style.cssText = `
+      position:absolute; left:50%; top:46%; width:min(64vh, 560px); height:min(64vh, 560px);
+      pointer-events:none; opacity:0.16; animation: authEmblemSpin 50s linear infinite;
+    `;
+    emblem.innerHTML = `
+      <svg width="100%" height="100%" viewBox="0 0 24 24">
+        <polygon points="12,2 21,8 21,16 12,22 3,16 3,8" fill="none" stroke="#7ad9ff" stroke-width="0.25"/>
+        <polygon points="12,7 16,10 16,14 12,17 8,14 8,10" fill="none" stroke="#7ad9ff" stroke-width="0.2"/>
+      </svg>
+    `;
+    overlay.appendChild(emblem);
 
     const motes = document.createElement('div');
     motes.style.cssText = 'position:absolute; inset:0; pointer-events:none;';

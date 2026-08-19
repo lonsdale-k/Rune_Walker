@@ -14,6 +14,13 @@ create table if not exists public.player_saves (
 -- 기존에 이미 만들어진 테이블에는 위 create table이 적용되지 않으므로 아래 alter문으로 컬럼을 추가한다
 alter table public.player_saves add column if not exists defeated_bosses jsonb not null default '[]'::jsonb;
 alter table public.player_saves add column if not exists colosseum_cleared boolean not null default false;
+alter table public.player_saves add column if not exists coins numeric not null default 0;
+alter table public.player_saves add column if not exists cleared_stages jsonb not null default '[]'::jsonb;
+alter table public.player_saves add column if not exists owned_cosmetics jsonb not null default '[]'::jsonb;
+alter table public.player_saves add column if not exists equipped_cosmetics jsonb not null default '{}'::jsonb;
+-- 전투 장비(equipment.js) — 코스메틱과 별개로 실제 스탯에 영향을 주는 드랍 아이템 저장용
+alter table public.player_saves add column if not exists owned_gear jsonb not null default '[]'::jsonb;
+alter table public.player_saves add column if not exists equipped_gear jsonb not null default '{}'::jsonb;
 
 alter table public.player_saves enable row level security;
 

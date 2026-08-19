@@ -59,50 +59,72 @@ export class Player {
     this.elementalDmgMult = 1;
     this.dashInvulnOnDash = false;
     this.hasSpecial5 = false;
+
+    // 장착 장비(equipment.js)의 합산 스탯 보너스 — equipState.getBonusStats()로 갱신되며
+    // recalcStats()가 이 값을 읽어 스킬 트리 보너스 위에 더한다. 장비가 없으면 전부 0.
+    this.gearBonus = { atkMult: 0, maxHpAdd: 0, critChance: 0, damageReduction: 0, moveSpeedMult: 0 };
   }
 
-  // 상점에서 구매/장착한 코스메틱을 반영 — 전투 스탯에는 영향 없이 겉모습(색상)만 갈아끼움
+  // 상점에서 구매/장착한 코스메틱을 반영 — 전투 스탯에는 영향 없이 겉모습(색상+형태)만 갈아끼움.
+  // style이 오면 해당 슬롯의 메시를 통째로 다시 지어서 끼운다 (색만 바꾸는 게 아니라 실루엣 자체가 바뀜).
   applyCosmetics(cosmetics = {}) {
     const rig = this.group.userData;
     if (cosmetics.trimColor != null) {
       rig.trimMat.color.setHex(cosmetics.trimColor);
       rig.trimMat.emissive.setHex(cosmetics.trimEmissive ?? cosmetics.trimColor);
+      if (rig.runeLight) rig.runeLight.color.setHex(cosmetics.trimEmissive ?? cosmetics.trimColor);
     }
+    if (cosmetics.trimStyle != null) {
+      clearSlot(rig.runeSlot, [rig.trimMat]);
+      for (const part of buildRuneParts(cosmetics.trimStyle, rig.trimMat)) rig.runeSlot.add(part);
+    }
+
     if (cosmetics.capeColor != null) rig.capeMat.color.setHex(cosmetics.capeColor);
     if (cosmetics.capeColor2 != null) rig.capeMat2.color.setHex(cosmetics.capeColor2);
-    if (cosmetics.weaponColor != null) {
-      rig.bladeMat.color.setHex(cosmetics.weaponColor);
-      rig.bladeMat.emissive.setHex(cosmetics.weaponEmissive ?? cosmetics.weaponColor);
+    if (cosmetics.capeStyle != null) {
+      clearSlot(rig.capeSlot, [rig.capeMat, rig.capeMat2]);
+      for (const part of buildCapeParts(cosmetics.capeStyle, rig.capeMat, rig.capeMat2)) rig.capeSlot.add(part);
+    }
+
+    if (cosmetics.weaponStyle != null) {
+      clearSlot(rig.bladeSlot);
+      for (const part of buildWeaponParts(cosmetics.weaponStyle, cosmetics.weaponColor, cosmetics.weaponEmissive)) {
+        rig.bladeSlot.add(part);
+      }
     }
   }
 
   recalcStats(skillState) {
+    const gear = this.gearBonus;
+
     const prevMax = this.maxHp;
     this.maxHp = this.baseMaxHp
       + (skillState.hasNode('defense_1') ? 30 : 0)
-      + (skillState.hasNode('defense_5') ? 50 : 0);
+      + (skillState.hasNode('defense_5') ? 50 : 0)
+      + gear.maxHpAdd;
     this.hp = Math.min(this.hp + (this.maxHp - prevMax), this.maxHp);
     this.hp = Math.max(this.hp, 1);
 
-    let moveSpeedMult = 1;
+    let moveSpeedMult = 1 + gear.moveSpeedMult;
     if (skillState.hasNode('mobility_1')) moveSpeedMult += 0.15;
     if (skillState.hasNode('mobility_4')) moveSpeedMult += 0.15;
     this.moveSpeed = BASE_MOVE_SPEED * moveSpeedMult;
 
-    let atkMult = 1;
+    let atkMult = 1 + gear.atkMult;
     if (skillState.hasNode('attack_1')) atkMult += 0.15;
     if (skillState.hasNode('attack_4')) atkMult += 0.15;
     this.attackDamage = BASE_ATTACK_DAMAGE * atkMult;
 
     this.critChance = BASE_CRIT_CHANCE
       + (skillState.hasNode('attack_2') ? 0.12 : 0)
-      + (skillState.hasNode('attack_5') ? 0.12 : 0);
+      + (skillState.hasNode('attack_5') ? 0.12 : 0)
+      + gear.critChance;
     this.critDamageMult = BASE_CRIT_DAMAGE_MULT + (skillState.hasNode('attack_3') ? 0.4 : 0);
 
     this.attackCooldownMult = Math.max(0.4, 1 - (skillState.hasNode('mobility_2') ? 0.15 : 0));
     this.skillCooldownMult = Math.max(0.4, 1 - (skillState.hasNode('mobility_3') ? 0.15 : 0));
 
-    this.damageReduction = skillState.hasNode('defense_2') ? 0.1 : 0;
+    this.damageReduction = Math.min(0.75, (skillState.hasNode('defense_2') ? 0.1 : 0) + gear.damageReduction);
     this.dodgeChance = skillState.hasNode('defense_3') ? 0.12 : 0;
     this.hpRegen = skillState.hasNode('defense_4') ? 3 : 0;
 
@@ -392,21 +414,13 @@ function buildPlayerMesh() {
   const capeMat2 = new THREE.MeshStandardMaterial({ color: 0x223a58, flatShading: true, side: THREE.DoubleSide });
   const cape = new THREE.Group();
   cape.position.set(0, 1.52, -0.34);
-  const capeBack = new THREE.Mesh(new THREE.ConeGeometry(0.46, 1.15, 4, 1, true), capeMat);
-  capeBack.rotation.x = Math.PI;
-  capeBack.rotation.y = Math.PI / 4;
-  capeBack.scale.set(1, 1, 0.42);
-  capeBack.castShadow = true;
-  cape.add(capeBack);
-  const capeInner = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.85, 4, 1, true), capeMat2);
-  capeInner.rotation.x = Math.PI;
-  capeInner.rotation.y = Math.PI / 4;
-  capeInner.scale.set(1, 1, 0.3);
-  capeInner.position.z = 0.03;
-  cape.add(capeInner);
+  const capeSlot = new THREE.Group();
+  cape.add(capeSlot);
+  for (const part of buildCapeParts('twin', capeMat, capeMat2)) capeSlot.add(part);
   cape.rotation.x = 0.2;
   group.add(cape);
   rig.cape = cape;
+  rig.capeSlot = capeSlot;
 
   // 허리 룬 벨트
   const belt = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.045, 6, 12), trimMat);
@@ -442,13 +456,16 @@ function buildPlayerMesh() {
   nose.position.set(0, 0, 0.42);
   headGroup.add(nose);
 
-  const rune = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), trimMat);
-  rune.position.set(0, 1.28, 0.33);
-  group.add(rune);
+  const runeSlot = new THREE.Group();
+  runeSlot.position.set(0, 1.28, 0.33);
+  group.add(runeSlot);
+  for (const part of buildRuneParts('octa', trimMat)) runeSlot.add(part);
+  rig.runeSlot = runeSlot;
 
   const runeLight = new THREE.PointLight(0x7ad9ff, 0.7, 4);
-  runeLight.position.copy(rune.position);
+  runeLight.position.copy(runeSlot.position);
   group.add(runeLight);
+  rig.runeLight = runeLight;
 
   // 팔 — 어깨 피벗에 매달아 걷기/공격 스윙을 자연스럽게 돌릴 수 있도록 함
   const armMat = new THREE.MeshStandardMaterial({ color: 0xe8c39e, flatShading: true });
@@ -475,10 +492,7 @@ function buildPlayerMesh() {
   rig.armPivotOff = armPivots[-1];
   rig.armPivotWeapon = armPivots[WEAPON_SIDE];
 
-  // 검 — 손 피벗에 매달아 공격 시 호를 그리며 베어냄
-  const bladeMat = new THREE.MeshStandardMaterial({
-    color: 0xdfe8f2, emissive: 0x6fc6f0, emissiveIntensity: 0.5, flatShading: true,
-  });
+  // 검 — 손잡이(grip/pommel/guard)는 고정 실루엣, 날(bladeSlot)만 상점 스킨에 따라 통째로 교체됨
   const gripMat = new THREE.MeshStandardMaterial({ color: 0x241a12, flatShading: true });
   const guardMat = new THREE.MeshStandardMaterial({ color: 0x1c2836, flatShading: true });
 
@@ -497,13 +511,11 @@ function buildPlayerMesh() {
   const guard = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.08), guardMat);
   guard.position.y = 0.16;
   weaponGroup.add(guard);
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.92, 0.05), bladeMat);
-  blade.position.y = 0.16 + 0.46;
-  blade.castShadow = true;
-  weaponGroup.add(blade);
-  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.26, 4), bladeMat);
-  tip.position.y = 0.16 + 0.92 + 0.13;
-  weaponGroup.add(tip);
+
+  const bladeSlot = new THREE.Group();
+  weaponGroup.add(bladeSlot);
+  for (const part of buildWeaponParts('straight', 0xdfe8f2, 0x6fc6f0)) bladeSlot.add(part);
+  rig.bladeSlot = bladeSlot;
 
   // 다리 — 엉덩이 피벗으로 걷기 사이클을 구현
   const legMat = new THREE.MeshStandardMaterial({ color: 0x22222c, flatShading: true });
@@ -530,11 +542,270 @@ function buildPlayerMesh() {
   rig.legPivotL = legPivots[-1];
   rig.legPivotR = legPivots[1];
 
-  // 커스터마이징(상점 코스메틱)이 색만 바꿔 끼울 수 있도록 관련 머티리얼을 노출
+  // 커스터마이징(상점 코스메틱)이 색을 바꿔 끼울 수 있도록 관련 머티리얼을 노출
+  // (형태 교체는 rig.runeSlot / rig.capeSlot / rig.bladeSlot을 통째로 다시 지어서 처리)
   rig.trimMat = trimMat;
   rig.capeMat = capeMat;
   rig.capeMat2 = capeMat2;
-  rig.bladeMat = bladeMat;
 
   return group;
+}
+
+// 슬롯(rune/cape/blade) 안의 기존 스킨 메시를 정리 — 지오메트리는 항상 폐기하고,
+// sharedMats에 넘긴 머티리얼(=rig에 계속 남아 색상 갱신에 쓰이는 공유 머티리얼)만 폐기에서 제외한다.
+function clearSlot(slot, sharedMats = []) {
+  for (const child of [...slot.children]) {
+    slot.remove(child);
+    if (child.geometry) child.geometry.dispose();
+    if (child.material && !sharedMats.includes(child.material)) child.material.dispose();
+  }
+}
+
+// ---- 무기(검신) 스킨 — 손잡이는 고정, 날 부분만 스타일별로 완전히 다른 실루엣으로 교체 ----
+const WEAPON_STYLES = {
+  straight: buildWeaponStraight,
+  fang: buildWeaponFang,
+  serrated: buildWeaponSerrated,
+  emberCore: buildWeaponEmberCore,
+  voidShard: buildWeaponVoidShard,
+};
+
+function buildWeaponParts(style, color, emissive) {
+  const fn = WEAPON_STYLES[style] ?? WEAPON_STYLES.straight;
+  return fn(color, emissive);
+}
+
+const HILT_TOP_Y = 0.16; // guard 높이 — 모든 날 스타일이 이 지점 위로 자라남
+
+function buildWeaponStraight(color, emissive) {
+  const mat = new THREE.MeshStandardMaterial({ color, emissive: emissive ?? color, emissiveIntensity: 0.5, flatShading: true });
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.92, 0.05), mat);
+  blade.position.y = HILT_TOP_Y + 0.46;
+  blade.castShadow = true;
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.26, 4), mat);
+  tip.position.y = HILT_TOP_Y + 0.92 + 0.13;
+  return [blade, tip];
+}
+
+// 맹독 검 — 독니처럼 안쪽으로 휘어 오르는 유기적 곡선 날 + 갈라진 쌍니 끝
+function buildWeaponFang(color, emissive) {
+  const mat = new THREE.MeshStandardMaterial({ color, emissive: emissive ?? color, emissiveIntensity: 0.6, flatShading: true });
+  const blade = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.12, 0.82, 5), mat);
+  blade.position.y = HILT_TOP_Y + 0.41;
+  blade.rotation.z = 0.09;
+  blade.castShadow = true;
+  const parts = [blade];
+  for (const side of [-1, 1]) {
+    const fang = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.22, 4), mat);
+    fang.position.set(side * 0.05, HILT_TOP_Y + 0.86, 0);
+    fang.rotation.z = side * 0.5;
+    parts.push(fang);
+  }
+  return parts;
+}
+
+// 핏빛 검 — 한쪽 날에 톱니를 세운 거친 처형용 대검
+function buildWeaponSerrated(color, emissive) {
+  const mat = new THREE.MeshStandardMaterial({ color, emissive: emissive ?? color, emissiveIntensity: 0.55, flatShading: true });
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.85, 0.05), mat);
+  blade.position.y = HILT_TOP_Y + 0.42;
+  blade.castShadow = true;
+  const parts = [blade];
+  for (let i = 0; i < 5; i++) {
+    const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 4), mat);
+    tooth.position.set(0.075, HILT_TOP_Y + 0.14 + i * 0.15, 0);
+    tooth.rotation.z = -Math.PI / 2;
+    parts.push(tooth);
+  }
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.24, 4), mat);
+  tip.position.y = HILT_TOP_Y + 0.85 + 0.12;
+  parts.push(tip);
+  return parts;
+}
+
+// 폭군의 파편 — 동굴 폭군(boss.js의 CaveTyrant) 몸체와 같은 지각 조각 + 발광 코어를 그대로 옮겨온 전리품 무기
+function buildWeaponEmberCore(color, emissive) {
+  const crustMat = new THREE.MeshStandardMaterial({ color: 0x201a16, flatShading: true });
+  const coreMat = new THREE.MeshStandardMaterial({ color, emissive: emissive ?? color, emissiveIntensity: 1.3, flatShading: true });
+  const parts = [];
+  const chunkSpecs = [[0.17, HILT_TOP_Y + 0.22], [0.14, HILT_TOP_Y + 0.5], [0.11, HILT_TOP_Y + 0.74]];
+  for (const [s, y] of chunkSpecs) {
+    const chunk = new THREE.Mesh(new THREE.OctahedronGeometry(s, 0), crustMat);
+    chunk.position.set(0, y, 0);
+    chunk.rotation.set(Math.random(), Math.random(), Math.random());
+    chunk.castShadow = true;
+    parts.push(chunk);
+  }
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), coreMat);
+  core.position.set(0, HILT_TOP_Y + 0.48, 0.02);
+  parts.push(core);
+  const light = new THREE.PointLight(emissive ?? color, 0.7, 2.6);
+  light.position.copy(core.position);
+  parts.push(light);
+  return parts;
+}
+
+// 공허 검 — 실체 있는 검신 대신 어두운 심(core) 주위를 떠도는 반투명 결정 파편들
+function buildWeaponVoidShard(color, emissive) {
+  const coreMat = new THREE.MeshStandardMaterial({ color: 0x140c22, flatShading: true });
+  const shardMat = new THREE.MeshStandardMaterial({
+    color, emissive: emissive ?? color, emissiveIntensity: 1.1, flatShading: true, transparent: true, opacity: 0.88,
+  });
+  const parts = [];
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.035, 0.86, 5), coreMat);
+  core.position.y = HILT_TOP_Y + 0.43;
+  parts.push(core);
+  const shardSpecs = [[0.1, HILT_TOP_Y + 0.34, 0], [-0.11, HILT_TOP_Y + 0.56, 0.03], [0.06, HILT_TOP_Y + 0.8, -0.04]];
+  for (const [x, y, z] of shardSpecs) {
+    const shard = new THREE.Mesh(new THREE.TetrahedronGeometry(0.1, 0), shardMat);
+    shard.position.set(x, y, z);
+    shard.rotation.set(Math.random(), Math.random(), Math.random());
+    parts.push(shard);
+  }
+  const light = new THREE.PointLight(emissive ?? color, 0.6, 3);
+  light.position.y = HILT_TOP_Y + 0.55;
+  parts.push(light);
+  return parts;
+}
+
+// ---- 망토 스킨 — 기본 이중 콘 실루엣에 스타일별 부속(찢어진 자락/잔불/서리 가시/잎)을 더하거나 형태 자체를 바꿈 ----
+const CAPE_STYLES = {
+  twin: buildCapeTwin,
+  tattered: buildCapeTattered,
+  wisp: buildCapeWisp,
+  shard: buildCapeShard,
+  leaf: buildCapeLeaf,
+};
+
+function buildCapeParts(style, matOuter, matInner) {
+  const fn = CAPE_STYLES[style] ?? CAPE_STYLES.twin;
+  return fn(matOuter, matInner);
+}
+
+function buildCapeBase(matOuter, matInner, backHeight = 1.15, innerHeight = 0.85, innerY = 0) {
+  const capeBack = new THREE.Mesh(new THREE.ConeGeometry(0.46, backHeight, 4, 1, true), matOuter);
+  capeBack.rotation.x = Math.PI;
+  capeBack.rotation.y = Math.PI / 4;
+  capeBack.scale.set(1, 1, 0.42);
+  capeBack.castShadow = true;
+  const capeInner = new THREE.Mesh(new THREE.ConeGeometry(0.34, innerHeight, 4, 1, true), matInner);
+  capeInner.rotation.x = Math.PI;
+  capeInner.rotation.y = Math.PI / 4;
+  capeInner.scale.set(1, 1, 0.3);
+  capeInner.position.set(0, innerY, 0.03);
+  return [capeBack, capeInner];
+}
+
+function buildCapeTwin(matOuter, matInner) {
+  return buildCapeBase(matOuter, matInner);
+}
+
+// 자수정 망토 — 밑단이 여러 갈래로 찢어진 실루엣
+function buildCapeTattered(matOuter, matInner) {
+  const parts = buildCapeBase(matOuter, matInner);
+  for (const x of [-0.26, -0.09, 0.09, 0.26]) {
+    const flap = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.4, 3), matInner);
+    flap.position.set(x, -0.62, -0.05 + Math.random() * 0.06);
+    flap.rotation.x = Math.PI;
+    flap.rotation.z = (Math.random() - 0.5) * 0.3;
+    parts.push(flap);
+  }
+  return parts;
+}
+
+// 잔불 망토 — 아랫단이 타들어가듯 짧아지고, 잔불 파편이 흩날림
+function buildCapeWisp(matOuter, matInner) {
+  const parts = buildCapeBase(matOuter, matInner, 0.82, 0.6, -0.1);
+  const emberMat = new THREE.MeshStandardMaterial({
+    color: matInner.color.getHex(), emissive: matInner.color.getHex(), emissiveIntensity: 1.4, flatShading: true,
+  });
+  for (let i = 0; i < 5; i++) {
+    const ember = new THREE.Mesh(new THREE.SphereGeometry(0.03, 5, 5), emberMat);
+    ember.position.set((Math.random() - 0.5) * 0.6, -0.5 - Math.random() * 0.35, (Math.random() - 0.5) * 0.25);
+    parts.push(ember);
+  }
+  return parts;
+}
+
+// 서리 망토 — 어깨 위로 서리 결정이 돋아난 형태
+function buildCapeShard(matOuter, matInner) {
+  const parts = buildCapeBase(matOuter, matInner);
+  const spikeMat = new THREE.MeshStandardMaterial({
+    color: matInner.color.getHex(), flatShading: true, transparent: true, opacity: 0.85,
+  });
+  for (const [x, y, z] of [[-0.22, 0.5, -0.1], [0, 0.58, -0.16], [0.22, 0.5, -0.1]]) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.36, 4), spikeMat);
+    spike.position.set(x, y, z);
+    spike.rotation.x = -0.4;
+    parts.push(spike);
+  }
+  return parts;
+}
+
+// 심록 망토 — 잎사귀가 돋아난 자연 친화적 실루엣
+function buildCapeLeaf(matOuter, matInner) {
+  const parts = buildCapeBase(matOuter, matInner);
+  const leafMat = new THREE.MeshStandardMaterial({ color: matInner.color.getHex(), flatShading: true, side: THREE.DoubleSide });
+  for (let i = 0; i < 6; i++) {
+    const t = i / 6;
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.2, 3), leafMat);
+    leaf.position.set(Math.sin(t * Math.PI * 2) * 0.32, -0.15 - t * 0.55, -0.06 + Math.cos(t * Math.PI * 2) * 0.05);
+    leaf.rotation.z = Math.PI / 2;
+    leaf.rotation.y = t * Math.PI * 2;
+    parts.push(leaf);
+  }
+  return parts;
+}
+
+// ---- 가슴 룬 스킨 — trimMat(공유 머티리얼)은 그대로 두고 보석 지오메트리만 스타일별로 교체 ----
+const RUNE_STYLES = {
+  octa: buildRuneOcta,
+  flame: buildRuneFlame,
+  ring: buildRuneRing,
+  spike: buildRuneSpike,
+  facet: buildRuneFacet,
+};
+
+function buildRuneParts(style, mat) {
+  const fn = RUNE_STYLES[style] ?? RUNE_STYLES.octa;
+  return fn(mat);
+}
+
+function buildRuneOcta(mat) {
+  return [new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), mat)];
+}
+
+// 진홍 룬 — 위로 치솟는 불꽃 형태
+function buildRuneFlame(mat) {
+  const main = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.46, 5), mat);
+  const lick = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.24, 5), mat);
+  lick.position.set(0.09, -0.08, 0.02);
+  lick.rotation.z = -0.4;
+  return [main, lick];
+}
+
+// 황금 룬 — 중심 보석을 감싸는 고리
+function buildRuneRing(mat) {
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.045, 6, 12), mat);
+  ring.rotation.x = Math.PI / 2;
+  const gem = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), mat);
+  return [ring, gem];
+}
+
+// 맹독 룬 — 방사형으로 돋아난 포자 가시 3갈래
+function buildRuneSpike(mat) {
+  const parts = [];
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2;
+    const spike = new THREE.Mesh(new THREE.TetrahedronGeometry(0.13, 0), mat);
+    spike.position.set(Math.cos(angle) * 0.1, Math.sin(angle) * 0.1, 0);
+    spike.rotation.set(Math.random(), Math.random(), Math.random());
+    parts.push(spike);
+  }
+  return parts;
+}
+
+// 자수정 룬 — 다면체로 깎인 보석
+function buildRuneFacet(mat) {
+  return [new THREE.Mesh(new THREE.DodecahedronGeometry(0.19, 0), mat)];
 }
