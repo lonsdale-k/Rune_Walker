@@ -16,6 +16,8 @@ export const PALETTE = {
   abyssGround: 0x281f36,
   riftSky: 0x0e0f1c,
   riftGround: 0x1e1e2e,
+  frostSky: 0x4f6f9c,
+  frostGround: 0xd8e6f0,
 };
 
 const CORRUPT_CENTER = { x: -45, z: -45 };
@@ -620,6 +622,31 @@ export function createCorruptCrystal() {
   return group;
 }
 
+// 얼어붙은 봉우리 전용 랜드마크 소품 — createCorruptCrystal과 같은 형태 문법(뾰족한 결정 군집)을
+// 차갑고 맑은 청백색 팔레트로 재도색해 다른 스테이지의 타락 결정과 구분되게 함
+export function createIceCrystal() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xcdeeff,
+    emissive: 0x6fc6ff,
+    emissiveIntensity: 0.65,
+    flatShading: true,
+    transparent: true,
+    opacity: 0.92,
+  });
+  const count = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    const h = 0.6 + Math.random() * 1.1;
+    const spike = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), mat);
+    spike.scale.set(1, h / 0.4, 1);
+    spike.position.set((Math.random() - 0.5) * 0.6, h * 0.4, (Math.random() - 0.5) * 0.6);
+    spike.rotation.set((Math.random() - 0.5) * 0.3, Math.random() * Math.PI, (Math.random() - 0.5) * 0.3);
+    group.add(spike);
+  }
+  group.userData.mat = mat;
+  return group;
+}
+
 // 여러 스테이지가 공용으로 쓰는 배경 랜드마크/디테일 소품 — 지형이 밋밋해 보이는 곳을 채우는 용도.
 export function createStandingStones() {
   const group = new THREE.Group();
@@ -853,6 +880,70 @@ export function createBanner(color = 0x7ad9ff) {
   pennant.rotation.x = Math.PI;
   group.add(pennant);
 
+  return group;
+}
+
+// 허브 전용 게시판 — 이벤트 패널 / 랭킹(명예의 전당) 패널을 여는 UI 버튼과 짝을 이루는 시각적 랜드마크.
+// 실제 열기 동작은 main.js가 UI 버튼에 바인딩하고, 이 메시는 순수 장식용이다.
+export function createNoticeBoard(accentColor = 0xffd166) {
+  const group = new THREE.Group();
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x3a2c1e, flatShading: true });
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 2.1, 5), postMat);
+    post.position.set(side * 0.55, 1.05, 0);
+    post.castShadow = true;
+    group.add(post);
+  }
+  const boardMat = new THREE.MeshStandardMaterial({ color: 0x2a2018, flatShading: true });
+  const board = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.0, 0.08), boardMat);
+  board.position.set(0, 1.75, 0.02);
+  board.castShadow = true;
+  group.add(board);
+
+  const glowMat = new THREE.MeshStandardMaterial({
+    color: accentColor, emissive: accentColor, emissiveIntensity: 1.1, flatShading: true,
+  });
+  const rune = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), glowMat);
+  rune.position.set(0, 1.75, 0.12);
+  group.add(rune);
+  const light = new THREE.PointLight(accentColor, 0.6, 4);
+  light.position.set(0, 1.75, 0.4);
+  group.add(light);
+
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(1.1, 0.4, 4), postMat);
+  roof.position.set(0, 2.42, 0);
+  roof.rotation.y = Math.PI / 4;
+  group.add(roof);
+
+  group.userData.rune = rune;
+  return group;
+}
+
+// 허브 한켠의 연습용 허수아비 — 전투와 무관한 순수 장식이지만 마을에 생활감을 더함
+export function createTrainingDummy() {
+  const group = new THREE.Group();
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x5a4530, flatShading: true });
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.3, 6), postMat);
+  post.position.y = 0.65;
+  post.castShadow = true;
+  group.add(post);
+  const armMat = new THREE.MeshStandardMaterial({ color: 0x4a3524, flatShading: true });
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.9, 5), armMat);
+  arm.rotation.z = Math.PI / 2;
+  arm.position.y = 1.15;
+  group.add(arm);
+  const sackMat = new THREE.MeshStandardMaterial({ color: 0xc9b28a, flatShading: true });
+  const sack = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.55, 3, 6), sackMat);
+  sack.position.y = 1.55;
+  sack.castShadow = true;
+  group.add(sack);
+  const stitchMat = new THREE.MeshStandardMaterial({ color: 0x8a3a2f, flatShading: true });
+  for (const y of [1.35, 1.55, 1.75]) {
+    const stitch = new THREE.Mesh(new THREE.TorusGeometry(0.325, 0.015, 4, 8), stitchMat);
+    stitch.rotation.x = Math.PI / 2;
+    stitch.position.y = y;
+    group.add(stitch);
+  }
   return group;
 }
 
@@ -1438,6 +1529,9 @@ export function createHubWorld() {
     { x: -11, z: -8, r: 2 }, // 우물
     { x: 9, z: -14, r: 2 }, // 벤치
     { x: -9, z: -14, r: 2 }, // 벤치
+    { x: -14, z: 18, r: 1.6 }, // 이벤트 게시판
+    { x: 14, z: 16, r: 1.6 }, // 명예의 전당 게시판
+    { x: 6, z: 18, r: 1.4 }, // 연습용 허수아비
   ];
 
   for (let i = 0; i < 26; i++) {
@@ -1537,6 +1631,24 @@ export function createHubWorld() {
   stallWood.rotation.y = 0.9;
   scene.add(stallWood);
 
+  // 이벤트 게시판 / 명예의 전당(랭킹) 게시판 — hubEventBtn·hubRankBtn과 짝을 이루는 시각적 랜드마크.
+  // 실제 패널을 여는 동작은 main.js가 UI 버튼 클릭에 바인딩하며, 이 메시들은 순수 장식이다.
+  const eventBoard = createNoticeBoard(0x8fff6a);
+  eventBoard.position.set(-14, 0, 18);
+  eventBoard.rotation.y = 0.6;
+  scene.add(eventBoard);
+  const rankBoard = createNoticeBoard(0xffd166);
+  rankBoard.position.set(14, 0, 16);
+  rankBoard.rotation.y = -0.6;
+  scene.add(rankBoard);
+  const noticeBoards = [eventBoard, rankBoard];
+
+  // 연습용 허수아비 — 전투와 무관한 순수 장식
+  const dummy = createTrainingDummy();
+  dummy.position.set(6, 0, 18);
+  dummy.rotation.y = -0.4;
+  scene.add(dummy);
+
   // 룬 서클 양옆 깃발 — 스폰 지점을 시각적으로 강조
   const bannerL = createBanner(0x7ad9ff);
   bannerL.position.set(-6, 0, 9);
@@ -1578,6 +1690,12 @@ export function createHubWorld() {
     if (runeCircle) {
       runeCircle.rotation.y += dt * 0.15;
       if (runeCore) runeCore.position.y = 1.1 + Math.sin(elapsed * 1.5) * 0.08;
+    }
+    for (const board of noticeBoards) {
+      const rune = board.userData.rune;
+      rune.rotation.y += dt * 0.8;
+      const pulse = 1 + Math.sin(elapsed * 2 + board.position.x) * 0.12;
+      rune.scale.set(pulse, pulse, pulse);
     }
   }
 
@@ -2097,4 +2215,95 @@ export function createRiftWorld() {
   }
 
   return { scene, update, radius: RIFT_RADIUS };
+}
+
+// --- 스테이지 7: 얼어붙은 봉우리 — '태초의 균열'을 정화한 뒤 그 위에서 새어 나오는 한기를 뒤쫓아
+// 도달하는 신규 최종 지대. 다른 스테이지의 어둡고 뒤틀린 톤과 달리 맑고 차가운 설원/빙벽 톤으로 마무리 ---
+export const FROZEN_PEAK_RADIUS = 46;
+
+export function createFrozenPeakWorld() {
+  const scene = new THREE.Scene();
+  setupBaseEnvironment(scene, {
+    skyColor: PALETTE.frostSky, groundColor: PALETTE.frostGround, fogNear: 26, fogFar: 140,
+    sunColor: 0xeaf6ff, sunIntensity: 1.15, hemiIntensity: 0.75,
+  });
+
+  const isClear = (x, z, avoid, extra = 0) => avoid.every((a) => Math.hypot(x - a.x, z - a.z) > a.r + extra);
+  const avoid = [{ x: 0, z: 8, r: 6 }, { x: 0, z: -34, r: 8 }];
+
+  for (let i = 0; i < 34; i++) {
+    const { x, z } = scatterPoint(9, FROZEN_PEAK_RADIUS - 3);
+    if (!isClear(x, z, avoid)) continue;
+    const tree = createTree(false);
+    tree.position.set(x, 0, z);
+    tree.rotation.y = Math.random() * Math.PI * 2;
+    const s = 0.8 + Math.random() * 0.35;
+    tree.scale.set(s, s, s);
+    scene.add(tree);
+  }
+  for (let i = 0; i < 32; i++) {
+    const { x, z } = scatterPoint(7, FROZEN_PEAK_RADIUS - 2);
+    if (!isClear(x, z, avoid)) continue;
+    const rock = createRock(false);
+    rock.position.set(x, 0, z);
+    scene.add(rock);
+  }
+
+  const crystals = [];
+  for (let i = 0; i < 26; i++) {
+    const { x, z } = scatterPoint(6, FROZEN_PEAK_RADIUS - 4);
+    if (!isClear(x, z, avoid)) continue;
+    const crystal = createIceCrystal();
+    crystal.position.set(x, 0, z);
+    crystal.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(crystal);
+    crystals.push(crystal);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const { x, z } = scatterPoint(12, FROZEN_PEAK_RADIUS - 6);
+    if (!isClear(x, z, avoid, 3)) continue;
+    const stones = createStandingStones();
+    stones.position.set(x, 0, z);
+    stones.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(stones);
+  }
+
+  // 스폰 지점의 룬 서클 — 다른 일반 스테이지들과 같은 진입 랜드마크
+  const runeCircle = createRuneCircle();
+  runeCircle.position.set(0, 0, 8);
+  scene.add(runeCircle);
+  const runeCore = runeCircle.userData.core;
+
+  // 원경 설산 — 봉우리라는 이름에 맞게 다른 스테이지보다 크고 촘촘하게 둘러쌈
+  for (let i = 0; i < 14; i++) {
+    const angle = (i / 14) * Math.PI * 2 + Math.random() * 0.12;
+    const r = FROZEN_PEAK_RADIUS + 10 + Math.random() * 14;
+    const mountain = createMountain(false);
+    mountain.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+    mountain.rotation.y = Math.random() * Math.PI * 2;
+    const s = 1.0 + Math.random() * 1.4;
+    mountain.scale.set(s, s * 1.1, s);
+    scene.add(mountain);
+  }
+
+  const clouds = setupClouds(scene, 10);
+  const motes = setupMotes(scene, 20, FROZEN_PEAK_RADIUS - 4, false);
+
+  let elapsed = 0;
+  function update(dt) {
+    elapsed += dt;
+    updateClouds(clouds, dt, 120);
+    updateMotes(motes, dt, elapsed);
+    for (const crystal of crystals) {
+      const mat = crystal.userData.mat;
+      mat.emissiveIntensity = 0.45 + Math.sin(elapsed * 1.6 + crystal.position.x) * 0.3;
+    }
+    if (runeCircle) {
+      runeCircle.rotation.y += dt * 0.15;
+      if (runeCore) runeCore.position.y = 1.1 + Math.sin(elapsed * 1.5) * 0.08;
+    }
+  }
+
+  return { scene, update, radius: FROZEN_PEAK_RADIUS };
 }

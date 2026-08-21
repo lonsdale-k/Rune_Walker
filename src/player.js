@@ -63,6 +63,9 @@ export class Player {
     // 장착 장비(equipment.js)의 합산 스탯 보너스 — equipState.getBonusStats()로 갱신되며
     // recalcStats()가 이 값을 읽어 스킬 트리 보너스 위에 더한다. 장비가 없으면 전부 0.
     this.gearBonus = { atkMult: 0, maxHpAdd: 0, critChance: 0, damageReduction: 0, moveSpeedMult: 0 };
+    // 장착 펫(pets.js)의 레벨 반영 보너스 — petState.getBonusStats()로 갱신됨. 장비와 같은 키를 쓰되
+    // hpRegen만 펫 전용 — 회복형 펫의 개성을 위해 추가한 필드.
+    this.petBonus = { atkMult: 0, maxHpAdd: 0, critChance: 0, damageReduction: 0, moveSpeedMult: 0, hpRegen: 0 };
   }
 
   // 상점에서 구매/장착한 코스메틱을 반영 — 전투 스탯에는 영향 없이 겉모습(색상+형태)만 갈아끼움.
@@ -96,21 +99,22 @@ export class Player {
 
   recalcStats(skillState) {
     const gear = this.gearBonus;
+    const pet = this.petBonus;
 
     const prevMax = this.maxHp;
     this.maxHp = this.baseMaxHp
       + (skillState.hasNode('defense_1') ? 30 : 0)
       + (skillState.hasNode('defense_5') ? 50 : 0)
-      + gear.maxHpAdd;
+      + gear.maxHpAdd + pet.maxHpAdd;
     this.hp = Math.min(this.hp + (this.maxHp - prevMax), this.maxHp);
     this.hp = Math.max(this.hp, 1);
 
-    let moveSpeedMult = 1 + gear.moveSpeedMult;
+    let moveSpeedMult = 1 + gear.moveSpeedMult + pet.moveSpeedMult;
     if (skillState.hasNode('mobility_1')) moveSpeedMult += 0.15;
     if (skillState.hasNode('mobility_4')) moveSpeedMult += 0.15;
     this.moveSpeed = BASE_MOVE_SPEED * moveSpeedMult;
 
-    let atkMult = 1 + gear.atkMult;
+    let atkMult = 1 + gear.atkMult + pet.atkMult;
     if (skillState.hasNode('attack_1')) atkMult += 0.15;
     if (skillState.hasNode('attack_4')) atkMult += 0.15;
     this.attackDamage = BASE_ATTACK_DAMAGE * atkMult;
@@ -118,15 +122,15 @@ export class Player {
     this.critChance = BASE_CRIT_CHANCE
       + (skillState.hasNode('attack_2') ? 0.12 : 0)
       + (skillState.hasNode('attack_5') ? 0.12 : 0)
-      + gear.critChance;
+      + gear.critChance + pet.critChance;
     this.critDamageMult = BASE_CRIT_DAMAGE_MULT + (skillState.hasNode('attack_3') ? 0.4 : 0);
 
     this.attackCooldownMult = Math.max(0.4, 1 - (skillState.hasNode('mobility_2') ? 0.15 : 0));
     this.skillCooldownMult = Math.max(0.4, 1 - (skillState.hasNode('mobility_3') ? 0.15 : 0));
 
-    this.damageReduction = Math.min(0.75, (skillState.hasNode('defense_2') ? 0.1 : 0) + gear.damageReduction);
+    this.damageReduction = Math.min(0.75, (skillState.hasNode('defense_2') ? 0.1 : 0) + gear.damageReduction + pet.damageReduction);
     this.dodgeChance = skillState.hasNode('defense_3') ? 0.12 : 0;
-    this.hpRegen = skillState.hasNode('defense_4') ? 3 : 0;
+    this.hpRegen = (skillState.hasNode('defense_4') ? 3 : 0) + pet.hpRegen;
 
     this.elementalDmgMult = 1 + (skillState.hasNode('special_4') ? 0.3 : 0);
     this.dashInvulnOnDash = skillState.hasNode('mobility_5');

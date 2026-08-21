@@ -51,6 +51,14 @@ export const GEAR_ITEMS = [
   { id: 'gear_a_rift_r', slot: 'armor', tier: 6, rarity: 'rare', name: '균열포식자의 비늘갑주', stats: { maxHpAdd: 120, damageReduction: 0.15 } },
   { id: 'gear_t_rift', slot: 'trinket', tier: 6, rarity: 'common', name: '균열의 파편', stats: { critChance: 0.10, moveSpeedMult: 0.08 } },
   { id: 'gear_t_rift_r', slot: 'trinket', tier: 6, rarity: 'rare', name: '태초의 심장', stats: { critChance: 0.13, moveSpeedMult: 0.10, damageReduction: 0.06 } },
+
+  // --- 얼어붙은 봉우리 (tier 7, 태초의 균열 이후 열리는 신규 최종 콘텐츠) ---
+  { id: 'gear_w_frost', slot: 'weapon', tier: 7, rarity: 'common', name: '서리에 갈린 도검', stats: { atkMult: 0.36 } },
+  { id: 'gear_w_frost_r', slot: 'weapon', tier: 7, rarity: 'rare', name: '서리군주의 얼음검', stats: { atkMult: 0.5, critChance: 0.10 } },
+  { id: 'gear_a_frost', slot: 'armor', tier: 7, rarity: 'common', name: '서리 갑옷', stats: { maxHpAdd: 100, damageReduction: 0.11 } },
+  { id: 'gear_a_frost_r', slot: 'armor', tier: 7, rarity: 'rare', name: '서리군주의 빙결 갑주', stats: { maxHpAdd: 135, damageReduction: 0.16 } },
+  { id: 'gear_t_frost', slot: 'trinket', tier: 7, rarity: 'common', name: '얼어붙은 결정', stats: { critChance: 0.11, moveSpeedMult: 0.09 } },
+  { id: 'gear_t_frost_r', slot: 'trinket', tier: 7, rarity: 'rare', name: '서리군주의 왕관 조각', stats: { critChance: 0.14, moveSpeedMult: 0.11, damageReduction: 0.065 } },
 ];
 
 export const GEAR_SLOTS = ['weapon', 'armor', 'trinket'];

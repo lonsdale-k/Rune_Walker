@@ -7,6 +7,7 @@ import {
   createRuinsWorld,
   createAbyssWorld,
   createRiftWorld,
+  createFrozenPeakWorld,
   WORLD_RADIUS,
   FINAL_BOSS_POS,
   COLOSSEUM_ENTRANCE_ANGLE,
@@ -23,10 +24,12 @@ import { Input } from './input.js';
 import { UI } from './ui.js';
 import { AuthScreen } from './authScreen.js';
 import { supabase } from './supabaseClient.js';
-import { loadSave, saveProgress } from './save.js';
+import { loadSave, saveProgress, upsertLeaderboard, fetchLeaderboard } from './save.js';
 import { STAGES, getStage, isStageUnlocked } from './stages.js';
 import { ShopState, COSMETIC_ITEMS, resolveCosmetics } from './shop.js';
 import { EquipmentState, GEAR_ITEMS, rollGearDrop } from './equipment.js';
+import { PetState, PET_ITEMS, getPet, petXpToNext } from './pets.js';
+import { PetCompanion } from './pet.js';
 
 const SKILL_KEYS = ['KeyQ', 'KeyE', 'Space', 'KeyR'];
 
@@ -39,9 +42,26 @@ const STAGE_BUILDERS = {
   ruins: createRuinsWorld,
   abyss: createAbyssWorld,
   rift: createRiftWorld,
+  frozenPeak: createFrozenPeakWorld,
 };
 // 스테이지별 플레이어 진입 지점 z좌표 — 지정 없으면 8 기본값
-const STAGE_SPAWN_Z = { cave: 20, ruins: 10, abyss: 12, rift: 10 };
+const STAGE_SPAWN_Z = { cave: 20, ruins: 10, abyss: 12, rift: 10, frozenPeak: 8 };
+
+// 출석 이벤트 보상 — 연속 출석일수에 비례해 커지되 7일째부터는 상한
+const DAILY_REWARD_BASE = 30;
+const DAILY_REWARD_STEP = 10;
+const DAILY_REWARD_CAP_DAYS = 7;
+function dailyReward(streak) {
+  return DAILY_REWARD_BASE + Math.min(streak - 1, DAILY_REWARD_CAP_DAYS - 1) * DAILY_REWARD_STEP;
+}
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+function yesterdayStr() {
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
 
 // 새 스테이지 보스는 대부분 기존 보스 클래스를 스탯만 바꿔 재사용한다(비주얼은 디자인 담당 몫) —
 // Boss/SporeQueen/CaveTyrant 생성자가 opts로 체력/피해량/이동속도/몸통 색조까지 받도록 되어 있어
@@ -72,6 +92,14 @@ function createBossByKind(kind, scene, pos) {
       name: '태초의 파괴자', maxHp: 2200, xpReward: 650, moveSpeed: 3.1, hitRadius: 2.0,
       slamDamage: 42, chargeDamage: 48, burstDamage: 18, novaDamage: 46,
       bodyColor: 0xc8e8ff, sealed: false,
+    });
+  }
+  if (kind === 'frostSovereign') {
+    // '얼어붙은 봉우리'(tier 7, 태초의 균열 이후 신규 최종 콘텐츠)의 보스 — 동굴 폭군 메시를
+    // 차갑고 밝은 톤으로 재도색해 재사용 (abyssTyrant와 같은 방식)
+    return new CaveTyrant(scene, pos, {
+      name: '서리 군주', maxHp: 2800, xpReward: 800, moveSpeed: 3.3,
+      slamDamage: 44, chargeDamage: 50, eruptDamage: 36, bodyColor: 0x9fd8ff,
     });
   }
   throw new Error(`알 수 없는 보스 종류: ${kind}`);
@@ -110,9 +138,12 @@ async function main() {
   const skillState = new SkillTreeState();
   const shopState = new ShopState();
   const equipState = new EquipmentState();
+  const petState = new PetState();
+
+  const username = user.user_metadata?.username || user.email;
 
   const ui = new UI(appEl);
-  ui.buildAccountBar(user.user_metadata?.username || user.email, () => {
+  ui.buildAccountBar(username, () => {
     supabase.auth.signOut().then(() => window.location.reload());
   });
 
@@ -127,6 +158,10 @@ async function main() {
   let victoryTriggered = false;
 
   const clearedStages = new Set();
+
+  // 출석 이벤트 상태 — 마지막으로 보상을 받은 날짜(UTC 기준 YYYY-MM-DD)와 연속 출석일수
+  let lastClaimDate = null;
+  let loginStreak = 0;
 
   let saveDirty = false;
   function markDirty() {
@@ -150,7 +185,15 @@ async function main() {
       equippedCosmetics: shopState.equipped,
       ownedGear: Array.from(equipState.owned),
       equippedGear: equipState.equipped,
+      lastClaimDate,
+      loginStreak,
+      ownedPets: Array.from(petState.owned),
+      equippedPet: petState.equipped,
+      petLevels: petState.levels,
+      petXp: petState.xp,
     });
+    // 명예의 전당(랭킹) 갱신 — 본 저장과 별개 테이블이라 실패해도 게임 진행에는 영향 없음
+    upsertLeaderboard(user.id, { username, level: player.level, coins: shopState.coins });
   }
   setInterval(() => flushSave(), 5000);
   document.addEventListener('visibilitychange', () => {
@@ -162,7 +205,9 @@ async function main() {
   if (existingSave) {
     skillState.loadState(existingSave);
     equipState.loadState(existingSave);
+    petState.loadState(existingSave);
     player.gearBonus = equipState.getBonusStats(); // loadProgress가 recalcStats를 호출하므로 그 전에 세팅
+    player.petBonus = petState.getBonusStats();
     player.loadProgress(existingSave, skillState);
     shopState.loadState(existingSave);
     for (const id of existingSave.cleared_stages ?? []) clearedStages.add(id);
@@ -171,6 +216,8 @@ async function main() {
     // 'corrupt' 클리어 기록은 이 기능 이전엔 저장된 적이 없었으므로, 이미 최종보스를 처치한
     // 기존 계정도 소급 적용되도록 defeatedBossIds로부터 역산 — 그래야 다음 스테이지가 열림
     if (defeatedBossIds.has('finalBoss')) clearedStages.add('corrupt');
+    lastClaimDate = existingSave.last_claim_date ?? null;
+    loginStreak = existingSave.login_streak ?? 0;
   } else {
     await flushSave(true);
   }
@@ -237,6 +284,52 @@ async function main() {
     ui.showLoot(drop);
   }
 
+  // 펫은 코스메틱과 같은 코인을 쓰지만 shopState.buy()는 COSMETIC_ITEMS 전용이라 여기서 직접 차감한다
+  function onBuyPet(id) {
+    const item = getPet(id);
+    if (!item || shopState.coins < item.price) return;
+    if (petState.buy(id)) {
+      shopState.coins -= item.price;
+      markDirty();
+      ui.renderPetPanel(petState, shopState.coins, PET_ITEMS, petXpToNext, onBuyPet, onEquipPet);
+      ui.updateCoins(shopState.coins);
+    }
+  }
+
+  function onEquipPet(id) {
+    if (petState.equip(id)) {
+      player.petBonus = petState.getBonusStats();
+      player.recalcStats(skillState);
+      syncPetCompanion();
+      markDirty();
+      ui.renderPetPanel(petState, shopState.coins, PET_ITEMS, petXpToNext, onBuyPet, onEquipPet);
+    }
+  }
+
+  // 장착한 펫의 3D 동료 메시를 현재 씬에 맞춰 새로 만들거나 치움 — 씬 전환(허브<->스테이지)마다,
+  // 그리고 펫을 장착/해제할 때마다 호출한다.
+  let petCompanion = null;
+  function syncPetCompanion() {
+    if (petCompanion) {
+      petCompanion.destroy();
+      petCompanion = null;
+    }
+    if (petState.equipped) {
+      const item = getPet(petState.equipped);
+      if (item) petCompanion = new PetCompanion(ctx.scene, item);
+    }
+  }
+
+  // 플레이어와 장착 펫이 함께 경험치를 얻는 공용 헬퍼 — 몬스터/보스 처치 시 이 함수로 통일해서 호출한다
+  function grantXp(amount) {
+    player.gainXp(amount, skillState);
+    if (petState.gainXp(amount)) {
+      player.petBonus = petState.getBonusStats();
+      player.recalcStats(skillState);
+    }
+    markDirty();
+  }
+
   ui.hubStageBtn.addEventListener('click', () => {
     ui.renderStageSelect(
       STAGES,
@@ -256,8 +349,49 @@ async function main() {
     ui.renderInventoryPanel(equipState, GEAR_ITEMS, onEquipGear, onUnequipGear);
     ui.toggleInventory(true);
   });
+  ui.hubPetBtn.addEventListener('click', () => {
+    ui.renderPetPanel(petState, shopState.coins, PET_ITEMS, petXpToNext, onBuyPet, onEquipPet);
+    ui.togglePet(true);
+  });
   // 클리어/사망 없이도 스테이지 중간에 언제든 허브로 돌아갈 수 있는 탈출 버튼
   ui.stageExitBtn.addEventListener('click', () => goToHub());
+
+  // --- 출석 이벤트: 오늘 아직 못 받았으면 claimable, 받으면 연속 출석일수(loginStreak) +1 ---
+  function isEventClaimable() {
+    return lastClaimDate !== todayStr();
+  }
+  function refreshEventDot() {
+    ui.setEventDot(isEventClaimable());
+  }
+  function renderEventNow() {
+    const claimable = isEventClaimable();
+    const previewStreak = claimable ? (lastClaimDate === yesterdayStr() ? loginStreak + 1 : 1) : loginStreak;
+    ui.renderEventPanel({
+      claimable, streak: previewStreak, reward: dailyReward(previewStreak),
+      onClaim: () => {
+        loginStreak = previewStreak;
+        lastClaimDate = todayStr();
+        shopState.addCoins(dailyReward(previewStreak));
+        markDirty();
+        flushSave(true);
+        renderEventNow();
+        refreshEventDot();
+      },
+    });
+  }
+  ui.hubEventBtn.addEventListener('click', () => {
+    renderEventNow();
+    ui.toggleEvent(true);
+  });
+  refreshEventDot();
+
+  // --- 명예의 전당(랭킹): 열 때마다 Supabase에서 상위 기록을 다시 불러오는 가벼운 폴링 방식 ---
+  ui.hubRankBtn.addEventListener('click', async () => {
+    ui.renderLeaderboardLoading();
+    ui.toggleLeaderboard(true);
+    const rows = await fetchLeaderboard(20);
+    ui.renderLeaderboardPanel(rows, user.id);
+  });
 
   function handleSpecialProc(hits) {
     if (!hits || hits.length === 0) return;
@@ -297,6 +431,7 @@ async function main() {
       mode: 'hub', scene: world.scene, updateWorld: world.update, radius: world.radius,
       enemies: [], bosses: [], allTargets: [],
     };
+    syncPetCompanion();
     ui.setHubBarVisible(true);
     ui.setStageExitVisible(false);
     ui.setGateHint(null);
@@ -326,6 +461,7 @@ async function main() {
       enemyKilled: new Array(enemies.length).fill(false),
       bossKilled: new Array(bosses.length).fill(false),
     };
+    syncPetCompanion();
     ui.setHubBarVisible(false);
     ui.setStageExitVisible(true);
     ui.setGateHint(null);
@@ -340,9 +476,8 @@ async function main() {
         if (!ctx.enemyKilled[i]) ctx.enemyKilled[i] = true;
         if (!enemy.xpGranted) {
           enemy.xpGranted = true;
-          player.gainXp(enemy.xpReward, skillState);
+          grantXp(enemy.xpReward);
           rollAndGrantDrop(tier, false);
-          markDirty();
         }
       }
     }
@@ -352,9 +487,8 @@ async function main() {
         if (!ctx.bossKilled[i]) ctx.bossKilled[i] = true;
         if (!boss.xpGranted) {
           boss.xpGranted = true;
-          player.gainXp(boss.xpReward, skillState);
+          grantXp(boss.xpReward);
           rollAndGrantDrop(tier, true);
-          markDirty();
         }
       }
     }
@@ -446,18 +580,16 @@ async function main() {
       for (const enemy of enemies) {
         if (enemy.isDead && !enemy.xpGranted) {
           enemy.xpGranted = true;
-          player.gainXp(enemy.xpReward, skillState);
+          grantXp(enemy.xpReward);
           rollAndGrantDrop(5, false); // 타락지대·성은 equipment.js 최종 등급(tier 5) 드랍
-          markDirty();
         }
       }
       for (const boss of bosses) {
         if (boss.isDead && !boss.xpGranted) {
           boss.xpGranted = true;
-          player.gainXp(boss.xpReward, skillState);
+          grantXp(boss.xpReward);
           rollAndGrantDrop(5, true);
           if (boss.saveId) defeatedBossIds.add(boss.saveId);
-          markDirty();
         }
       }
       if (!victoryTriggered && finalBoss.isDead) {
@@ -485,6 +617,7 @@ async function main() {
       mode: 'stage', stageId: 'corrupt', scene: world.scene, updateWorld: world.update, radius: WORLD_RADIUS,
       enemies, bosses, allTargets, legacyTick: tick,
     };
+    syncPetCompanion();
     ui.setHubBarVisible(false);
     ui.setStageExitVisible(true);
     snapCamera();
@@ -516,6 +649,7 @@ async function main() {
         const outerGateLocked = ctx.stageId === 'corrupt' && player.level < REQUIRED_LEVEL;
         const innerGateLocked = ctx.stageId === 'corrupt' && !colosseumCleared;
         player.update(dt, input, skillState, ctx.radius, outerGateLocked, innerGateLocked);
+        if (petCompanion) petCompanion.update(dt, clock.elapsedTime, player.group);
 
         const attacked = input.consumeAttack();
         const skillsPressed = SKILL_KEYS.map((code) => input.consumeSkill(code));

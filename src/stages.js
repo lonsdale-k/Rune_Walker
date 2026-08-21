@@ -105,6 +105,25 @@ export const STAGES = [
     bosses: [{ kind: 'primordialDestroyer', pos: [0, -34] }],
     clearReward: { coins: 700 },
   },
+  {
+    id: 'frozenPeak',
+    name: '얼어붙은 봉우리',
+    order: 7,
+    tier: 7,
+    // '태초의 균열'을 클리어한 룬워커가 더 높은 곳에서 새어 나오는 한기를 뒤쫓아 도달하는 신규 최종 지대
+    unlock: { prevStageId: 'rift' },
+    enemySpawns: [
+      { pos: [14, -12], kind: 'golem' },
+      { pos: [-16, 12], kind: 'golem' },
+      { pos: [12, 16], kind: 'wraith' },
+      { pos: [-12, -18], kind: 'wraith' },
+      { pos: [20, 6], kind: 'spider' },
+      { pos: [-20, -6], kind: 'spider' },
+      { pos: [6, -22], kind: 'wraith' },
+    ],
+    bosses: [{ kind: 'frostSovereign', pos: [0, -34] }],
+    clearReward: { coins: 950 },
+  },
 ];
 
 export function getStage(id) {

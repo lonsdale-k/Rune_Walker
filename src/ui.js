@@ -103,6 +103,9 @@ export class UI {
     this._buildStageSelectPanel();
     this._buildShopPanel();
     this._buildInventoryPanel();
+    this._buildPetPanel();
+    this._buildEventPanel();
+    this._buildLeaderboardPanel();
     this._buildDeathScreen();
     this._buildVictoryScreen();
     this._buildInstructions();
@@ -113,7 +116,8 @@ export class UI {
 
   // 스킬 패널이나 튜토리얼처럼 화면을 덮는 오버레이가 떠 있는 동안은 게임 진행을 멈춰야 함
   isPaused() {
-    return this.panelOpen || this.tutorialOpen || this.stageSelectOpen || this.shopOpen || this.inventoryOpen;
+    return this.panelOpen || this.tutorialOpen || this.stageSelectOpen || this.shopOpen || this.inventoryOpen
+      || this.eventOpen || this.leaderboardOpen || this.petOpen;
   }
 
   _buildHUD() {
@@ -336,12 +340,35 @@ export class UI {
         background: rgba(110,80,170,0.85); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
         color: #fff; font-size: 14px; font-weight: 700; padding: 10px 20px; cursor: pointer;
       ">장비</button>
+      <button id="hubPetBtn" style="
+        background: rgba(210,120,150,0.85); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+        color: #fff; font-size: 14px; font-weight: 700; padding: 10px 20px; cursor: pointer;
+      ">펫</button>
+      <button id="hubEventBtn" style="
+        background: rgba(70,150,90,0.85); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+        color: #fff; font-size: 14px; font-weight: 700; padding: 10px 20px; cursor: pointer; position: relative;
+      ">이벤트<span id="hubEventDot" style="
+        display:none; position:absolute; top:-4px; right:-4px; width:10px; height:10px; border-radius:50%;
+        background:#ff5566; box-shadow:0 0 6px #ff5566;
+      "></span></button>
+      <button id="hubRankBtn" style="
+        background: rgba(60,90,140,0.85); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px;
+        color: #fff; font-size: 14px; font-weight: 700; padding: 10px 20px; cursor: pointer;
+      ">명예의 전당</button>
     `;
     this.root.appendChild(wrap);
     this.hubBarEl = wrap;
     this.hubStageBtn = wrap.querySelector('#hubStageBtn');
     this.hubShopBtn = wrap.querySelector('#hubShopBtn');
     this.hubInventoryBtn = wrap.querySelector('#hubInventoryBtn');
+    this.hubPetBtn = wrap.querySelector('#hubPetBtn');
+    this.hubEventBtn = wrap.querySelector('#hubEventBtn');
+    this.hubEventDotEl = wrap.querySelector('#hubEventDot');
+    this.hubRankBtn = wrap.querySelector('#hubRankBtn');
+  }
+
+  setEventDot(visible) {
+    this.hubEventDotEl.style.display = visible ? 'block' : 'none';
   }
 
   setHubBarVisible(visible) {
@@ -588,6 +615,243 @@ export class UI {
       if (!equipped) card.addEventListener('click', () => onEquip(item.id));
       this.gearOwnedGridEl.appendChild(card);
     }
+  }
+
+  // --- 펫 패널 — 구매/장착 흐름은 상점과 같지만, 장착 중인 펫은 레벨·경험치 바를 추가로 보여준다 ---
+  _buildPetPanel() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: absolute; inset: 0; background: rgba(5,5,10,0.75);
+      display: none; align-items: center; justify-content: center; z-index: 10;
+    `;
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background: #1b1b26; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      padding: 24px 28px; width: 560px; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+      color: #fff; font-family: inherit; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    `;
+    panel.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <div style="font-size:18px; font-weight:700;">🐾 펫</div>
+        <span id="petCoins" style="font-size:14px; color:#ffd166; font-weight:700;">🪙 0</span>
+      </div>
+      <div id="petGrid" style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 14px;"></div>
+      <div style="margin-top:14px; font-size:12px; color:#8a8a9a;">
+        장착한 펫은 몬스터를 잡을 때마다 함께 경험치를 얻어 성장합니다 (최대 Lv.10). 같은 펫을 다시 누르면 장착 해제됩니다. 닫으려면 바깥을 클릭하세요
+      </div>
+    `;
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this.togglePet(false);
+    });
+    this.root.appendChild(overlay);
+    this.petEl = overlay;
+    this.petCoinsEl = panel.querySelector('#petCoins');
+    this.petGridEl = panel.querySelector('#petGrid');
+    this.petOpen = false;
+  }
+
+  togglePet(open = !this.petOpen) {
+    this.petOpen = open;
+    this.petEl.style.display = open ? 'flex' : 'none';
+  }
+
+  renderPetPanel(petState, coins, items, xpToNextFn, onBuy, onEquip) {
+    this.petCoinsEl.textContent = `🪙 ${coins}`;
+    this.petGridEl.innerHTML = '';
+    for (const item of items) {
+      const owned = petState.isOwned(item.id);
+      const equipped = petState.equipped === item.id;
+      const canAfford = coins >= item.price;
+      const level = petState.levelOf(item.id);
+
+      const card = document.createElement('div');
+      card.style.cssText = `
+        background: ${equipped ? '#2f6f4f' : '#242430'}; border: 1px solid ${equipped ? '#4fd18a' : 'rgba(255,255,255,0.1)'};
+        border-radius: 8px; padding: 12px; display:flex; flex-direction:column; gap:6px; align-items:center;
+      `;
+      const iconWrap = document.createElement('div');
+      iconWrap.style.cssText = `
+        width: 44px; height: 44px; border-radius: 50%; display:flex; align-items:center; justify-content:center;
+        background: rgba(0,0,0,0.3); box-shadow: 0 0 12px ${hex(item.emissive ?? item.color)}55, inset 0 0 0 1px rgba(255,255,255,0.06);
+      `;
+      iconWrap.innerHTML = `<svg width="26" height="26" viewBox="0 0 24 24">
+        <polygon points="12,3 20,9 20,17 12,22 4,17 4,9" fill="${hex(item.color)}" stroke="${hex(item.emissive ?? item.color)}" stroke-width="0.6"/>
+      </svg>`;
+      card.appendChild(iconWrap);
+
+      const name = document.createElement('div');
+      name.style.cssText = 'font-size:12px; font-weight:700; text-align:center;';
+      name.textContent = item.name;
+      card.appendChild(name);
+
+      const bonusLine = document.createElement('div');
+      bonusLine.style.cssText = 'font-size:10px; color:#9fb0c0; text-align:center;';
+      bonusLine.textContent = Object.entries(item.bonus).map(([k, v]) => formatGearStat(k, v)).join(' · ');
+      card.appendChild(bonusLine);
+
+      if (owned) {
+        const levelLine = document.createElement('div');
+        levelLine.style.cssText = 'font-size:11px; color:#ffd166; font-weight:700;';
+        levelLine.textContent = `Lv.${level}`;
+        card.appendChild(levelLine);
+
+        if (equipped) {
+          const xpNeeded = xpToNextFn(level);
+          const xpPct = level >= 10 ? 100 : Math.min(100, (petState.xpOf(item.id) / xpNeeded) * 100);
+          const xpBarWrap = document.createElement('div');
+          xpBarWrap.style.cssText = 'width:100%; background:rgba(0,0,0,0.4); border-radius:5px; padding:2px;';
+          xpBarWrap.innerHTML = `<div style="height:6px; width:${xpPct}%; background:#7ad9ff; border-radius:4px;"></div>`;
+          card.appendChild(xpBarWrap);
+        }
+      }
+
+      const btn = document.createElement('button');
+      btn.style.cssText = `
+        font-size:11px; padding:5px 10px; border-radius:6px; border:none; cursor:pointer; width:100%;
+        background: ${equipped ? '#4fd18a' : owned ? '#3a6ea5' : canAfford ? '#a5843a' : '#3a3a4a'};
+        color: #fff;
+      `;
+      if (equipped) {
+        btn.textContent = '장착 해제';
+        btn.addEventListener('click', () => onEquip(item.id));
+      } else if (owned) {
+        btn.textContent = '장착하기';
+        btn.addEventListener('click', () => onEquip(item.id));
+      } else {
+        btn.textContent = `구매 🪙${item.price}`;
+        btn.disabled = !canAfford;
+        if (canAfford) btn.addEventListener('click', () => onBuy(item.id));
+      }
+      card.appendChild(btn);
+      this.petGridEl.appendChild(card);
+    }
+  }
+
+  // --- 이벤트 패널 — 하루 한 번 출석 보상을 챙기는 가벼운 이벤트 시스템 ---
+  _buildEventPanel() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: absolute; inset: 0; background: rgba(5,5,10,0.75);
+      display: none; align-items: center; justify-content: center; z-index: 10;
+    `;
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background: #1b1b26; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      padding: 24px 28px; width: 420px; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+      color: #fff; font-family: inherit; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    `;
+    panel.innerHTML = `
+      <div style="font-size:18px; font-weight:700; margin-bottom:4px;">📅 출석 이벤트</div>
+      <div style="font-size:12px; color:#8a8a9a; margin-bottom:16px;">매일 첫 접속 시 보상을 받을 수 있어요. 연속 출석일수록 보상이 커집니다</div>
+      <div id="eventStreakLine" style="font-size:13px; color:#ffd166; font-weight:700; margin-bottom:12px;"></div>
+      <div id="eventRewardCard" style="
+        background:#242430; border:1px solid rgba(255,255,255,0.1); border-radius:10px;
+        padding:16px; text-align:center; margin-bottom:14px;
+      "></div>
+      <button id="eventClaimBtn" style="
+        width:100%; padding:11px; border:none; border-radius:8px; cursor:pointer;
+        font-size:14px; font-weight:700; color:#fff;
+      "></button>
+      <div style="margin-top:14px; font-size:12px; color:#8a8a9a;">닫으려면 바깥을 클릭하세요</div>
+    `;
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this.toggleEvent(false);
+    });
+    this.root.appendChild(overlay);
+    this.eventEl = overlay;
+    this.eventStreakLineEl = panel.querySelector('#eventStreakLine');
+    this.eventRewardCardEl = panel.querySelector('#eventRewardCard');
+    this.eventClaimBtnEl = panel.querySelector('#eventClaimBtn');
+    this.eventOpen = false;
+  }
+
+  toggleEvent(open = !this.eventOpen) {
+    this.eventOpen = open;
+    this.eventEl.style.display = open ? 'flex' : 'none';
+  }
+
+  // claimable: 오늘 아직 안 받았는지 / streak: 연속 출석일수 / reward: 오늘 받을(받은) 코인량 / onClaim: 클릭 콜백
+  renderEventPanel({ claimable, streak, reward, onClaim }) {
+    this.eventStreakLineEl.textContent = `🔥 연속 출석 ${streak}일째`;
+    this.eventRewardCardEl.innerHTML = `
+      <div style="font-size:12px; color:#8a8a9a; margin-bottom:6px;">${claimable ? '오늘의 보상' : '내일 다시 방문해주세요'}</div>
+      <div style="font-size:22px; font-weight:800; color:#ffd166;">🪙 ${reward}</div>
+    `;
+    this.eventClaimBtnEl.textContent = claimable ? '보상 받기' : '오늘은 이미 받았어요';
+    this.eventClaimBtnEl.style.background = claimable ? '#3a8a5a' : '#3a3a4a';
+    this.eventClaimBtnEl.style.cursor = claimable ? 'pointer' : 'default';
+    this.eventClaimBtnEl.disabled = !claimable;
+    this.eventClaimBtnEl.onclick = claimable ? onClaim : null;
+  }
+
+  // --- 명예의 전당(랭킹) 패널 — Supabase의 leaderboard 테이블을 폴링해 다른 플레이어의 진행 상황을 보여줌.
+  // 실시간 동시 플레이는 아니지만, 다른 모험가들이 실제로 존재한다는 감각을 가볍게 전달하는 용도 ---
+  _buildLeaderboardPanel() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: absolute; inset: 0; background: rgba(5,5,10,0.75);
+      display: none; align-items: center; justify-content: center; z-index: 10;
+    `;
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background: #1b1b26; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      padding: 24px 28px; width: 480px; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+      color: #fff; font-family: inherit; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    `;
+    panel.innerHTML = `
+      <div style="font-size:18px; font-weight:700; margin-bottom:4px;">🏆 명예의 전당</div>
+      <div style="font-size:12px; color:#8a8a9a; margin-bottom:14px;">모든 룬워커 중 레벨이 가장 높은 모험가들</div>
+      <div id="rankList" style="display:flex; flex-direction:column; gap:6px;"></div>
+      <div style="margin-top:14px; font-size:12px; color:#8a8a9a;">닫으려면 바깥을 클릭하세요</div>
+    `;
+    overlay.appendChild(panel);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) this.toggleLeaderboard(false);
+    });
+    this.root.appendChild(overlay);
+    this.leaderboardEl = overlay;
+    this.rankListEl = panel.querySelector('#rankList');
+    this.leaderboardOpen = false;
+  }
+
+  toggleLeaderboard(open = !this.leaderboardOpen) {
+    this.leaderboardOpen = open;
+    this.leaderboardEl.style.display = open ? 'flex' : 'none';
+  }
+
+  renderLeaderboardLoading() {
+    this.rankListEl.innerHTML = `<div style="font-size:12px; color:#8a8a9a; text-align:center; padding:16px 0;">불러오는 중...</div>`;
+  }
+
+  renderLeaderboardPanel(rows, currentUserId) {
+    this.rankListEl.innerHTML = '';
+    if (rows.length === 0) {
+      this.rankListEl.innerHTML = `<div style="font-size:12px; color:#8a8a9a; text-align:center; padding:16px 0;">아직 기록이 없습니다</div>`;
+      return;
+    }
+    const MEDAL = ['🥇', '🥈', '🥉'];
+    rows.forEach((row, i) => {
+      const isMe = row.user_id === currentUserId;
+      const line = document.createElement('div');
+      line.style.cssText = `
+        display:flex; justify-content:space-between; align-items:center;
+        background: ${isMe ? '#2f6f4f' : '#242430'}; border: 1px solid ${isMe ? '#4fd18a' : 'rgba(255,255,255,0.08)'};
+        border-radius: 8px; padding: 10px 14px; font-size: 13px;
+      `;
+      line.innerHTML = `
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="width:26px; text-align:center;">${MEDAL[i] ?? `#${i + 1}`}</span>
+          <span style="font-weight:700;">${row.username}${isMe ? ' (나)' : ''}</span>
+        </div>
+        <div style="display:flex; gap:14px; color:#9fb0c0;">
+          <span>Lv.${row.level}</span>
+          <span style="color:#ffd166;">🪙${row.coins}</span>
+        </div>
+      `;
+      this.rankListEl.appendChild(line);
+    });
   }
 
   // 아이템 드랍 시 잠깐 뜨는 토스트 (스테이지 클리어 배너와 같은 자리, 겹치면 나중 것이 덮어씀)
@@ -947,12 +1211,14 @@ export class UI {
 
 const GEAR_STAT_LABEL = {
   atkMult: '공격력', maxHpAdd: '최대체력', critChance: '치명타 확률',
-  damageReduction: '피해 감소', moveSpeedMult: '이동속도',
+  damageReduction: '피해 감소', moveSpeedMult: '이동속도', hpRegen: '체력 재생',
 };
+// 값 그대로(+N) 표기할 스탯 — 나머지는 배율이라 %로 환산해서 보여준다
+const GEAR_STAT_FLAT = new Set(['maxHpAdd', 'hpRegen']);
 
 function formatGearStat(key, value) {
   const label = GEAR_STAT_LABEL[key] ?? key;
-  const text = key === 'maxHpAdd' ? `+${value}` : `+${Math.round(value * 100)}%`;
+  const text = GEAR_STAT_FLAT.has(key) ? `+${Math.round(value * 10) / 10}` : `+${Math.round(value * 100)}%`;
   return `${label} ${text}`;
 }
 
