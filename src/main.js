@@ -15,6 +15,7 @@ import {
   REQUIRED_LEVEL,
   OUTER_GATE_RADIUS,
   INNER_GATE_RADIUS,
+  triggerFortressReveal,
 } from './world.js';
 import { Player } from './player.js';
 import { Enemy } from './enemy.js';
@@ -94,12 +95,46 @@ function createBossByKind(kind, scene, pos) {
       bodyColor: 0xc8e8ff, sealed: false,
     });
   }
+  // --- '태초의 균열' 요새를 지키는 보조 보스 2기 — 타락지대(콜로세움+성)처럼 요새 안뜰에서
+  // 여러 보스를 동시에 상대하는 구성을 이어간다 ---
+  if (kind === 'riftWarden') {
+    return new Boss(scene, pos, {
+      name: '균열 파수병', maxHp: 900, xpReward: 280, hitRadius: 1.5,
+      slamDamage: 20, chargeDamage: 24, bodyColor: 0xbfe0ff,
+    });
+  }
+  if (kind === 'riftDevourer') {
+    return new SporeQueen(scene, pos, {
+      name: '균열포식자', maxHp: 1100, xpReward: 340,
+      moveSpeed: 3.4, projectileDamage: 16, poolDps: 18, bodyColor: 0xaad0ff,
+    });
+  }
   if (kind === 'frostSovereign') {
     // '얼어붙은 봉우리'(tier 7, 태초의 균열 이후 신규 최종 콘텐츠)의 보스 — 동굴 폭군 메시를
     // 차갑고 밝은 톤으로 재도색해 재사용 (abyssTyrant와 같은 방식)
     return new CaveTyrant(scene, pos, {
       name: '서리 군주', maxHp: 2800, xpReward: 800, moveSpeed: 3.3,
       slamDamage: 44, chargeDamage: 50, eruptDamage: 36, bodyColor: 0x9fd8ff,
+    });
+  }
+  // --- 서리 요새를 지키는 보조 보스 3기 — 균열 요새(보스 3기)보다 한 단계 더 늘어난 구성 ---
+  if (kind === 'iceGiant') {
+    return new CorruptedBear(scene, pos, {
+      name: '얼음 거인', maxHp: 1400, xpReward: 420, moveSpeed: 3.0, hitRadius: 1.8,
+      slamDamage: 30, chargeDamage: 34, burstDamage: 14, novaDamage: 32,
+      bodyColor: 0xe8f4ff, sealed: false,
+    });
+  }
+  if (kind === 'frostWarden') {
+    return new Boss(scene, pos, {
+      name: '서리 파수병', maxHp: 1100, xpReward: 340, hitRadius: 1.5,
+      slamDamage: 24, chargeDamage: 28, bodyColor: 0xcfeaff,
+    });
+  }
+  if (kind === 'glacierDevourer') {
+    return new SporeQueen(scene, pos, {
+      name: '빙하 포식자', maxHp: 1350, xpReward: 400,
+      moveSpeed: 3.5, projectileDamage: 18, poolDps: 20, bodyColor: 0xbfe0ff,
     });
   }
   throw new Error(`알 수 없는 보스 종류: ${kind}`);
@@ -341,18 +376,6 @@ async function main() {
     );
     ui.toggleStageSelect(true);
   });
-  ui.hubShopBtn.addEventListener('click', () => {
-    ui.renderShopPanel(shopState, COSMETIC_ITEMS, onBuyItem, onEquipItem);
-    ui.toggleShop(true);
-  });
-  ui.hubInventoryBtn.addEventListener('click', () => {
-    ui.renderInventoryPanel(equipState, GEAR_ITEMS, onEquipGear, onUnequipGear);
-    ui.toggleInventory(true);
-  });
-  ui.hubPetBtn.addEventListener('click', () => {
-    ui.renderPetPanel(petState, shopState.coins, PET_ITEMS, petXpToNext, onBuyPet, onEquipPet);
-    ui.togglePet(true);
-  });
   // 클리어/사망 없이도 스테이지 중간에 언제든 허브로 돌아갈 수 있는 탈출 버튼
   ui.stageExitBtn.addEventListener('click', () => goToHub());
 
@@ -379,14 +402,34 @@ async function main() {
       },
     });
   }
-  ui.hubEventBtn.addEventListener('click', () => {
+  refreshEventDot();
+
+  // --- 메뉴 화면 — 허브 바의 "메뉴" 버튼 하나로 들어와서, 상점/장비/펫/이벤트/명예의 전당 중
+  // 하나를 고르면 그 항목이 그대로 화면 전체를 채우는 전용 화면으로 전환된다 ---
+  ui.hubMenuBtn.addEventListener('click', () => ui.toggleMenuLauncher(true));
+  ui.menuNavBtns.shop.addEventListener('click', () => {
+    ui.toggleMenuLauncher(false);
+    ui.renderShopPanel(shopState, COSMETIC_ITEMS, onBuyItem, onEquipItem);
+    ui.toggleShop(true);
+  });
+  ui.menuNavBtns.inventory.addEventListener('click', () => {
+    ui.toggleMenuLauncher(false);
+    ui.renderInventoryPanel(equipState, GEAR_ITEMS, onEquipGear, onUnequipGear);
+    ui.toggleInventory(true);
+  });
+  ui.menuNavBtns.pet.addEventListener('click', () => {
+    ui.toggleMenuLauncher(false);
+    ui.renderPetPanel(petState, shopState.coins, PET_ITEMS, petXpToNext, onBuyPet, onEquipPet);
+    ui.togglePet(true);
+  });
+  ui.menuNavBtns.event.addEventListener('click', () => {
+    ui.toggleMenuLauncher(false);
     renderEventNow();
     ui.toggleEvent(true);
   });
-  refreshEventDot();
-
-  // --- 명예의 전당(랭킹): 열 때마다 Supabase에서 상위 기록을 다시 불러오는 가벼운 폴링 방식 ---
-  ui.hubRankBtn.addEventListener('click', async () => {
+  // 명예의 전당은 열 때마다 Supabase에서 상위 기록을 다시 불러오는 가벼운 폴링 방식
+  ui.menuNavBtns.leaderboard.addEventListener('click', async () => {
+    ui.toggleMenuLauncher(false);
     ui.renderLeaderboardLoading();
     ui.toggleLeaderboard(true);
     const rows = await fetchLeaderboard(20);
@@ -452,6 +495,10 @@ async function main() {
     const bosses = stage.bosses.map(
       ({ kind, pos: [x, z] }) => createBossByKind(kind, world.scene, new THREE.Vector3(x, 0, z))
     );
+    // 선봉 보스(final:true가 아닌 보스)를 모두 처치하기 전까지 최종보스는 봉인 상태 — sealed면
+    // takeDamage가 무시되므로(boss.js) 공격이 아예 안 먹힌다. 타락지대(콜로세움+성)와 같은 패턴.
+    const finalBossIndex = stage.bosses.findIndex((b) => b.final);
+    if (finalBossIndex !== -1) bosses[finalBossIndex].sealed = true;
     const allTargets = [...enemies, ...bosses];
 
     ctx = {
@@ -460,6 +507,9 @@ async function main() {
       // 몬스터가 리스폰하더라도 "한 번씩은 다 잡았다"를 놓치지 않도록 개별 처치 여부를 별도로 추적
       enemyKilled: new Array(enemies.length).fill(false),
       bossKilled: new Array(bosses.length).fill(false),
+      finalBossIndex: finalBossIndex === -1 ? null : finalBossIndex,
+      finalBossRevealed: false,
+      fortress: world.fortress ?? null,
     };
     syncPetCompanion();
     ui.setHubBarVisible(false);
@@ -492,6 +542,16 @@ async function main() {
         }
       }
     }
+    // 선봉 보스를 모두 처치하면 최종보스 봉인 해제 + 그를 가리던 요새 성벽이 걷히는 연출
+    if (ctx.finalBossIndex != null && !ctx.finalBossRevealed) {
+      const guardsCleared = ctx.bossKilled.every((killed, i) => i === ctx.finalBossIndex || killed);
+      if (guardsCleared) {
+        ctx.finalBossRevealed = true;
+        ctx.bosses[ctx.finalBossIndex].sealed = false;
+        if (ctx.fortress) triggerFortressReveal(ctx.fortress);
+        ui.showFinalBossReveal(ctx.bosses[ctx.finalBossIndex].name);
+      }
+    }
     // 보스가 있는 스테이지는 보스만 잡으면 클리어 — 일반 몬스터는 경험치/드랍용 잡몹이 됨.
     // 보스가 없는 스테이지(현재는 없음)에 한해 기존처럼 전체 처치를 요구하는 걸로 폴백.
     const stageCleared = ctx.bosses.length > 0
@@ -505,11 +565,17 @@ async function main() {
       clearedStages.add(ctx.stageId);
       markDirty();
       flushSave(true);
-      ui.showStageCleared(stage.name, reward);
-      const clearedStageId = ctx.stageId;
-      setTimeout(() => {
-        if (ctx.stageId === clearedStageId) goToHub();
-      }, 1800);
+      // finalStage(현재는 얼어붙은 봉우리)의 최종보스를 잡으면 일반 클리어 배너 대신
+      // 진짜 승리 연출 — 폭주한 룬을 없애고 성을 되찾았다는 결말
+      if (stage.finalStage) {
+        ui.beginVictorySequence();
+      } else {
+        ui.showStageCleared(stage.name, reward);
+        const clearedStageId = ctx.stageId;
+        setTimeout(() => {
+          if (ctx.stageId === clearedStageId) goToHub();
+        }, 1800);
+      }
     }
   }
 
@@ -594,10 +660,20 @@ async function main() {
       }
       if (!victoryTriggered && finalBoss.isDead) {
         victoryTriggered = true;
-        clearedStages.add('corrupt'); // 이후 스테이지(예: 태초의 균열) 잠금 해제 조건으로 쓰임
+        clearedStages.add('corrupt'); // 이후 스테이지(균열의 탑 등) 잠금 해제 조건으로 쓰임
         world.purify();
-        ui.beginVictorySequence();
+        // 이 옥좌의 주인은 진짜 폭주한 룬이 아니라 그 힘을 대리하던 파수꾼이라, 여기서는 게임 전체의
+        // 승리 연출이 아니라 일반 스테이지 클리어로 처리하고 허브로 돌려보낸다(진짜 결말은
+        // stages.js의 finalStage:true 스테이지에서 tickGenericStage가 담당)
+        const stage = getStage('corrupt');
+        const reward = stage.clearReward?.coins ?? 0;
+        shopState.addCoins(reward);
+        ui.showStageCleared(stage.name, reward);
         flushSave(true);
+        // world.purify()가 5초짜리 붕괴 애니메이션이라 그게 끝날 때까지는 허브로 돌아가지 않는다
+        setTimeout(() => {
+          if (ctx.stageId === 'corrupt') goToHub();
+        }, 5500);
       }
 
       const distToColosseum = Math.hypot(
@@ -631,6 +707,58 @@ async function main() {
   goToHub();
 
   const clock = new THREE.Clock();
+
+  // 카메라와 플레이어 사이에 나무/성벽/기둥 같은 장애물이 끼어 캐릭터가 안 보이는 문제를 막기 위해,
+  // 매 프레임 카메라→플레이어 사이를 레이캐스트해서 가리는 오브젝트를 반투명하게 만들었다가,
+  // 더 이상 가리지 않으면 원래 불투명도로 되돌린다. 이미 반투명한 연출용 오브젝트(안개/결계/빛기둥 등)나
+  // 바닥은 건드리지 않는다.
+  const occlusionRaycaster = new THREE.Raycaster();
+  const occludedParts = new Map(); // mesh -> { opacity, transparent } (가리기 전 원래 상태)
+  const occlusionDir = new THREE.Vector3();
+  const occlusionRight = new THREE.Vector3();
+  // 캐릭터 중심 한 점만 쏘면 옆으로 넓은 장애물(오두막 벽 등)이 몸 일부만 가려도 못 잡아내므로,
+  // 가슴 중앙/좌/우/머리 네 지점 각각으로 레이를 쏴서 캐릭터의 대략적인 폭·높이를 커버한다.
+  const occlusionPoints = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
+  function updateOcclusionFade() {
+    const base = player.group.position;
+    occlusionRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+    occlusionPoints[0].set(base.x, base.y + 1.1, base.z); // 가슴 중앙
+    occlusionPoints[1].copy(occlusionPoints[0]).addScaledVector(occlusionRight, 0.45); // 오른쪽 어깨
+    occlusionPoints[2].copy(occlusionPoints[0]).addScaledVector(occlusionRight, -0.45); // 왼쪽 어깨
+    occlusionPoints[3].set(base.x, base.y + 1.8, base.z); // 머리
+
+    const targets = ctx.scene.children.filter((c) => c !== player.group);
+    const stillOccluded = new Set();
+    for (const point of occlusionPoints) {
+      occlusionDir.subVectors(point, camera.position);
+      const dist = occlusionDir.length();
+      if (dist < 0.5) continue;
+      occlusionDir.normalize();
+      occlusionRaycaster.set(camera.position, occlusionDir);
+      occlusionRaycaster.near = 0.5;
+      occlusionRaycaster.far = Math.max(0.5, dist - 0.6);
+      const hits = occlusionRaycaster.intersectObjects(targets, true);
+      for (const hit of hits) {
+        const mesh = hit.object;
+        if (!mesh.isMesh || !mesh.material || mesh.userData.noOcclude || mesh.material.transparent) continue;
+        stillOccluded.add(mesh);
+      }
+    }
+
+    for (const mesh of stillOccluded) {
+      if (!occludedParts.has(mesh)) {
+        occludedParts.set(mesh, { opacity: mesh.material.opacity, transparent: mesh.material.transparent });
+        mesh.material.transparent = true;
+      }
+      mesh.material.opacity = 0.22;
+    }
+    for (const [mesh, original] of occludedParts) {
+      if (stillOccluded.has(mesh)) continue;
+      mesh.material.opacity = original.opacity;
+      mesh.material.transparent = original.transparent;
+      occludedParts.delete(mesh);
+    }
+  }
 
   function animate() {
     requestAnimationFrame(animate);
@@ -687,6 +815,7 @@ async function main() {
     );
     camera.position.lerp(cameraTarget, 1 - Math.pow(0.0005, dt));
     camera.lookAt(player.group.position.x, player.group.position.y + 1.2, player.group.position.z);
+    updateOcclusionFade();
 
     ui.updateHUD(player);
     ui.updateCoins(shopState.coins);
@@ -697,7 +826,10 @@ async function main() {
     renderer.render(ctx.scene, camera);
   }
 
-  window.__debug = { camera, get scene() { return ctx.scene; }, player, ctx: () => ctx };
+  window.__debug = {
+    camera, get scene() { return ctx.scene; }, player, ctx: () => ctx, updateOcclusionFade,
+    forceRender: () => renderer.render(ctx.scene, camera),
+  };
   animate();
 
   window.addEventListener('resize', () => {

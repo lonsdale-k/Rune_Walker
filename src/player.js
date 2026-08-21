@@ -105,6 +105,7 @@ export class Player {
     this.maxHp = this.baseMaxHp
       + (skillState.hasNode('defense_1') ? 30 : 0)
       + (skillState.hasNode('defense_5') ? 50 : 0)
+      + (skillState.hasNode('defense_8') ? 70 : 0)
       + gear.maxHpAdd + pet.maxHpAdd;
     this.hp = Math.min(this.hp + (this.maxHp - prevMax), this.maxHp);
     this.hp = Math.max(this.hp, 1);
@@ -112,27 +113,38 @@ export class Player {
     let moveSpeedMult = 1 + gear.moveSpeedMult + pet.moveSpeedMult;
     if (skillState.hasNode('mobility_1')) moveSpeedMult += 0.15;
     if (skillState.hasNode('mobility_4')) moveSpeedMult += 0.15;
+    if (skillState.hasNode('mobility_8')) moveSpeedMult += 0.10;
     this.moveSpeed = BASE_MOVE_SPEED * moveSpeedMult;
 
     let atkMult = 1 + gear.atkMult + pet.atkMult;
     if (skillState.hasNode('attack_1')) atkMult += 0.15;
     if (skillState.hasNode('attack_4')) atkMult += 0.15;
+    if (skillState.hasNode('attack_7')) atkMult += 0.15;
     this.attackDamage = BASE_ATTACK_DAMAGE * atkMult;
 
     this.critChance = BASE_CRIT_CHANCE
       + (skillState.hasNode('attack_2') ? 0.12 : 0)
       + (skillState.hasNode('attack_5') ? 0.12 : 0)
       + gear.critChance + pet.critChance;
-    this.critDamageMult = BASE_CRIT_DAMAGE_MULT + (skillState.hasNode('attack_3') ? 0.4 : 0);
+    this.critDamageMult = BASE_CRIT_DAMAGE_MULT
+      + (skillState.hasNode('attack_3') ? 0.4 : 0)
+      + (skillState.hasNode('attack_8') ? 0.4 : 0);
 
-    this.attackCooldownMult = Math.max(0.4, 1 - (skillState.hasNode('mobility_2') ? 0.15 : 0));
-    this.skillCooldownMult = Math.max(0.4, 1 - (skillState.hasNode('mobility_3') ? 0.15 : 0));
+    this.attackCooldownMult = Math.max(0.4, 1
+      - (skillState.hasNode('mobility_2') ? 0.15 : 0)
+      - (skillState.hasNode('mobility_7') ? 0.10 : 0));
+    this.skillCooldownMult = Math.max(0.4, 1
+      - (skillState.hasNode('mobility_3') ? 0.15 : 0)
+      - (skillState.hasNode('special_8') ? 0.10 : 0));
 
-    this.damageReduction = Math.min(0.75, (skillState.hasNode('defense_2') ? 0.1 : 0) + gear.damageReduction + pet.damageReduction);
+    this.damageReduction = Math.min(0.75, (skillState.hasNode('defense_2') ? 0.1 : 0)
+      + (skillState.hasNode('defense_7') ? 0.08 : 0) + gear.damageReduction + pet.damageReduction);
     this.dodgeChance = skillState.hasNode('defense_3') ? 0.12 : 0;
     this.hpRegen = (skillState.hasNode('defense_4') ? 3 : 0) + pet.hpRegen;
 
-    this.elementalDmgMult = 1 + (skillState.hasNode('special_4') ? 0.3 : 0);
+    this.elementalDmgMult = 1
+      + (skillState.hasNode('special_4') ? 0.3 : 0)
+      + (skillState.hasNode('special_7') ? 0.2 : 0);
     this.dashInvulnOnDash = skillState.hasNode('mobility_5');
     this.hasSpecial5 = skillState.hasNode('special_5');
   }

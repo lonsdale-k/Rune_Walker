@@ -1,21 +1,23 @@
 import * as THREE from 'three';
 
-// 밝은 지역(평화)과 타락 지역의 이중 톤 색상 팔레트 — 황혼빛의 어둡고 분위기 있는 톤
+// 밝은 지역(평화)과 타락 지역의 이중 톤 색상 팔레트 — 황혼빛 분위기는 유지하되, 어두운 스테이지들도
+// 지형/적/장식이 눈에 잘 들어오도록 이전보다 훨씬 밝게 잡았다 (기존 팔레트는 거의 검정에 가까워
+// 잘 안 보인다는 피드백을 반영).
 export const PALETTE = {
   peaceSky: 0x3c4f7a,
   peaceGround: 0x3f7a4a,
-  corruptSky: 0x140e1c,
-  corruptGround: 0x241c2e,
-  caveSky: 0x1c1826,
-  caveGround: 0x453a30,
+  corruptSky: 0x3c3050,
+  corruptGround: 0x4a3c60,
+  caveSky: 0x453a5c,
+  caveGround: 0x6a5a48,
   hubSky: 0x4a6a8f,
   hubGround: 0x4a8f5a,
-  ruinsSky: 0x2a2438,
-  ruinsGround: 0x4a4438,
-  abyssSky: 0x170f24,
-  abyssGround: 0x281f36,
-  riftSky: 0x0e0f1c,
-  riftGround: 0x1e1e2e,
+  ruinsSky: 0x453d5c,
+  ruinsGround: 0x5c5448,
+  abyssSky: 0x3a2c54,
+  abyssGround: 0x483a5c,
+  riftSky: 0x3a4266,
+  riftGround: 0x3c3c58,
   frostSky: 0x4f6f9c,
   frostGround: 0xd8e6f0,
 };
@@ -62,6 +64,7 @@ export function createWorld() {
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
+  ground.userData.noOcclude = true;
   scene.add(ground);
 
   // 타락 지대: 어두운 원형 패치 (이중 톤 대비 연출)
@@ -339,7 +342,7 @@ export function createWorld() {
   // --- 타락 지대~콜로세움 상공의 먹구름 천장 + 지면 안개 (다크소울풍 음산한 분위기) ---
   const ATMOSPHERE_RADIUS = 75;
   const stormCeilingMat = new THREE.MeshBasicMaterial({
-    color: 0x1a1422, transparent: true, opacity: 0.68, side: THREE.DoubleSide, depthWrite: false,
+    color: 0x453a5c, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false,
   });
   const stormCeiling = new THREE.Mesh(new THREE.CircleGeometry(ATMOSPHERE_RADIUS, 40), stormCeilingMat);
   stormCeiling.rotation.x = Math.PI / 2;
@@ -347,7 +350,7 @@ export function createWorld() {
   scene.add(stormCeiling);
 
   const groundFogMat = new THREE.MeshBasicMaterial({
-    color: 0x2a2036, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false,
+    color: 0x4a3f5c, transparent: true, opacity: 0.15, side: THREE.DoubleSide, depthWrite: false,
   });
   const groundFog = new THREE.Mesh(new THREE.CircleGeometry(ATMOSPHERE_RADIUS, 40), groundFogMat);
   groundFog.rotation.x = -Math.PI / 2;
@@ -1189,9 +1192,9 @@ export function createRuneCircle() {
 
 function createCastle() {
   const group = new THREE.Group();
-  const darkStone = new THREE.MeshStandardMaterial({ color: 0x1c1822, flatShading: true });
-  const stone = new THREE.MeshStandardMaterial({ color: 0x2b2530, flatShading: true });
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x120f18, flatShading: true });
+  const darkStone = new THREE.MeshStandardMaterial({ color: 0x3a3248, flatShading: true });
+  const stone = new THREE.MeshStandardMaterial({ color: 0x4a4258, flatShading: true });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x2a2436, flatShading: true });
 
   const baseY = 0; // 콜로세움 바닥에 그대로 서 있는 성 — 공중부양 없음
   const outerWallParts = []; // 정화 완료 시 완전히 사라지는 바깥 성벽/탑 — 중앙 첨탑(보스 방)은 남겨둠
@@ -1317,8 +1320,8 @@ function createCastle() {
 // 콜로세움: 외곽 성벽 링(입구 개방) + 무너진 관중석 + 입구를 지키는 화톳불 기둥 (다크소울풍)
 function createColosseum(radius, entranceAngle) {
   const group = new THREE.Group();
-  const stone = new THREE.MeshStandardMaterial({ color: 0x2b2530, flatShading: true });
-  const darkStone = new THREE.MeshStandardMaterial({ color: 0x1c1822, flatShading: true });
+  const stone = new THREE.MeshStandardMaterial({ color: 0x4a4258, flatShading: true });
+  const darkStone = new THREE.MeshStandardMaterial({ color: 0x3a3248, flatShading: true });
 
   const angleDiffFrom = (angle, target) => {
     let diff = Math.abs(angle - target) % (Math.PI * 2);
@@ -1407,6 +1410,135 @@ function createColosseum(radius, entranceAngle) {
   return group;
 }
 
+// 재사용 가능한 축소판 요새 — 타락지대(콜로세움+성) 뒤에 이어지는 스테이지들이 하나같이 밋밋한
+// 개활지로 끝나 버리면 콜로세움보다 인상이 약해지므로, 후반 스테이지의 보스 격전지 뒤편에
+// 이 요새를 세워 "성을 공략한다"는 그림을 계속 이어가게 한다. palette로 스테이지마다 톤을 바꾼다.
+// entranceAngle 방향(기본: 플레이어가 들어오는 +Z쪽)은 벽을 비워 안뜰처럼 열어 둔다.
+export function createFortress(palette = {}) {
+  const wallColor = palette.wallColor ?? 0x4a4258;
+  const darkColor = palette.darkColor ?? 0x3a3248;
+  const roofColor = palette.roofColor ?? 0x2a2436;
+  const orbColor = palette.orbColor ?? 0x9b3fe0;
+  const radius = palette.radius ?? 13;
+  const entranceAngle = palette.entranceAngle ?? Math.PI / 2;
+
+  const group = new THREE.Group();
+  const stone = new THREE.MeshStandardMaterial({ color: wallColor, flatShading: true });
+  const darkStone = new THREE.MeshStandardMaterial({ color: darkColor, flatShading: true });
+  const roofMat = new THREE.MeshStandardMaterial({ color: roofColor, flatShading: true });
+
+  const angleDiffFrom = (angle, target) => {
+    let diff = Math.abs(angle - target) % (Math.PI * 2);
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    return diff;
+  };
+
+  // wallParts: 최종보스가 봉인 해제될 때 걷혀 사라지는 부분들(성벽/탑/첨탑) — 기단(plinth)과
+  // 발광 오브(orb)는 최종보스 격전지의 바닥/조명으로 계속 남아 있어야 하므로 여기 넣지 않는다.
+  const wallParts = [];
+
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(radius + 1.2, radius + 2.6, 1.4, 12), darkStone);
+  plinth.position.y = 0.7;
+  plinth.receiveShadow = true;
+  group.add(plinth);
+
+  const wallHeight = 7;
+  const segments = 12;
+  for (let i = 0; i < segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    if (angleDiffFrom(angle, entranceAngle) < 0.5) continue; // 입구 개방
+    const broken = Math.random() < 0.2;
+    const h = broken ? wallHeight * 0.5 : wallHeight;
+    const segLen = 2 * radius * Math.sin(Math.PI / segments) * 1.05;
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(segLen, h, 1.6), broken ? darkStone : stone);
+    wall.position.set(Math.cos(angle) * radius, h / 2 + 1.4, Math.sin(angle) * radius);
+    wall.rotation.y = -angle + Math.PI / 2;
+    wall.castShadow = true;
+    wall.receiveShadow = true;
+    group.add(wall);
+    wallParts.push(wall);
+    if (!broken) {
+      for (const c of [-1, 1]) {
+        const cren = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.2, 1.8), stone);
+        cren.position.set(
+          wall.position.x + Math.cos(angle + Math.PI / 2) * segLen * 0.3 * c,
+          wallHeight + 2,
+          wall.position.z + Math.sin(angle + Math.PI / 2) * segLen * 0.3 * c
+        );
+        group.add(cren);
+        wallParts.push(cren);
+      }
+    }
+  }
+
+  // 성벽을 두른 탑 5개
+  const towerCount = 5;
+  for (let i = 0; i < towerCount; i++) {
+    const angle = (i / towerCount) * Math.PI * 2 + 0.3;
+    const th = 9 + Math.random() * 5;
+    const tower = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.9, th, 7), stone);
+    tower.position.set(Math.cos(angle) * radius, th / 2 + 1.4, Math.sin(angle) * radius);
+    tower.castShadow = true;
+    group.add(tower);
+    wallParts.push(tower);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(2.1, th * 0.35, 7), roofMat);
+    roof.position.set(tower.position.x, 1.4 + th + (th * 0.35) / 2, tower.position.z);
+    group.add(roof);
+    wallParts.push(roof);
+  }
+
+  // 중앙 첨탑 — 최종보스를 가리고 있던 구조물. 봉인 해제와 함께 무너져 사라진다.
+  const keepHeight = 11;
+  const keep = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.1, keepHeight, 8), stone);
+  keep.position.y = keepHeight / 2 + 1.4;
+  group.add(keep);
+  wallParts.push(keep);
+  const keepRoof = new THREE.Mesh(new THREE.ConeGeometry(3.3, 3.6, 8), roofMat);
+  keepRoof.position.y = keepHeight + 1.4 + 1.8;
+  group.add(keepRoof);
+  wallParts.push(keepRoof);
+
+  // 스테이지 테마 발광 오브 — 요새가 걷힌 뒤에도 최종보스 격전지를 밝히는 조명으로 남는다
+  const orbMat = new THREE.MeshStandardMaterial({
+    color: orbColor, emissive: orbColor, emissiveIntensity: 1.5, flatShading: true,
+  });
+  const orb = new THREE.Mesh(new THREE.OctahedronGeometry(1.1, 0), orbMat);
+  orb.position.y = keepHeight + 1.4 + 4.5;
+  group.add(orb);
+  const orbLight = new THREE.PointLight(orbColor, 2, 30);
+  orbLight.position.copy(orb.position);
+  group.add(orbLight);
+
+  group.userData.orb = orb;
+  group.userData.orbMat = orbMat;
+  group.userData.wallParts = wallParts;
+  group.userData.revealing = false;
+  group.userData.revealElapsed = 0;
+  return group;
+}
+
+// 요새의 성벽/탑/첨탑을 걷어내는 연출 트리거 — 앞을 지키던 보스들을 모두 처치해 최종보스가
+// 봉인 해제되는 순간에 호출한다. 기존 콜로세움+성(createWorld)의 purify() 애니메이션과 같은 방식.
+export function triggerFortressReveal(fortress) {
+  if (!fortress || fortress.userData.revealing) return;
+  fortress.userData.revealing = true;
+  fortress.userData.revealElapsed = 0;
+}
+
+const FORTRESS_REVEAL_DURATION = 3;
+export function updateFortressReveal(fortress, dt) {
+  if (!fortress || !fortress.userData.revealing) return;
+  fortress.userData.revealElapsed = Math.min(FORTRESS_REVEAL_DURATION, fortress.userData.revealElapsed + dt);
+  const t = fortress.userData.revealElapsed / FORTRESS_REVEAL_DURATION;
+  const eased = 1 - (1 - t) * (1 - t);
+  const scale = Math.max(0, 1 - eased);
+  for (const part of fortress.userData.wallParts) part.scale.setScalar(scale);
+  if (t >= 1) {
+    for (const part of fortress.userData.wallParts) part.visible = false;
+    fortress.userData.revealing = false;
+  }
+}
+
 export function createMountain(corrupted) {
   const mat = new THREE.MeshStandardMaterial({
     color: corrupted ? 0x352a3f : 0x6f7a8c,
@@ -1468,6 +1600,7 @@ function setupBaseEnvironment(scene, {
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
+  ground.userData.noOcclude = true;
   scene.add(ground);
 
   return { hemi, sun, ground };
@@ -1793,7 +1926,7 @@ export const CAVE_RADIUS = 40;
 export function createCaveWorld() {
   const scene = new THREE.Scene();
   setupBaseEnvironment(scene, {
-    skyColor: PALETTE.caveSky, groundColor: PALETTE.caveGround, fogNear: 22, fogFar: 90,
+    skyColor: PALETTE.caveSky, groundColor: PALETTE.caveGround, fogNear: 28, fogFar: 120,
     sunColor: 0xafc0ff, sunIntensity: 1.5, hemiIntensity: 1.1,
   });
 
@@ -1804,7 +1937,7 @@ export function createCaveWorld() {
 
   // 낮은 천장 — 동굴 안이라는 느낌을 주는 반투명 암반 지붕
   const ceilingMat = new THREE.MeshBasicMaterial({
-    color: 0x100c0a, transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false,
+    color: 0x3a3226, transparent: true, opacity: 0.4, side: THREE.DoubleSide, depthWrite: false,
   });
   const ceiling = new THREE.Mesh(new THREE.CircleGeometry(CAVE_RADIUS + 10, 32), ceilingMat);
   ceiling.rotation.x = Math.PI / 2;
@@ -2006,8 +2139,8 @@ export const ABYSS_RADIUS = 42;
 export function createAbyssWorld() {
   const scene = new THREE.Scene();
   setupBaseEnvironment(scene, {
-    skyColor: PALETTE.abyssSky, groundColor: PALETTE.abyssGround, fogNear: 17, fogFar: 85,
-    sunColor: 0x9a7fd0, sunIntensity: 0.95, hemiIntensity: 1.7,
+    skyColor: PALETTE.abyssSky, groundColor: PALETTE.abyssGround, fogNear: 24, fogFar: 115,
+    sunColor: 0x9a7fd0, sunIntensity: 1.1, hemiIntensity: 1.7,
   });
 
   // 결정체 빛만으론 시야 확보가 안 돼서(너무 어두워 아예 안 보임) 중앙 채움광 + 외곽 보조광 2개로 나눠 고르게 밝힘
@@ -2022,7 +2155,7 @@ export function createAbyssWorld() {
 
   // 짙게 내려앉은 암반 천장 — 동굴보다 낮지만, 시야를 완전히 가릴 정도로 어둡진 않게
   const ceilingMat = new THREE.MeshBasicMaterial({
-    color: 0x140e1e, transparent: true, opacity: 0.62, side: THREE.DoubleSide, depthWrite: false,
+    color: 0x3a2c4a, transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false,
   });
   const ceiling = new THREE.Mesh(new THREE.CircleGeometry(ABYSS_RADIUS + 8, 32), ceilingMat);
   ceiling.rotation.x = Math.PI / 2;
@@ -2112,8 +2245,8 @@ export const RIFT_RADIUS = 44;
 export function createRiftWorld() {
   const scene = new THREE.Scene();
   setupBaseEnvironment(scene, {
-    skyColor: PALETTE.riftSky, groundColor: PALETTE.riftGround, fogNear: 18, fogFar: 95,
-    sunColor: 0xdff2ff, sunIntensity: 1, hemiIntensity: 0.9,
+    skyColor: PALETTE.riftSky, groundColor: PALETTE.riftGround, fogNear: 26, fogFar: 125,
+    sunColor: 0xdff2ff, sunIntensity: 1.2, hemiIntensity: 1.0,
   });
 
   // 중심의 균열광(riftLight)이 반경(26) 밖까지는 못 미쳐서, 스테이지 외곽용 보조 채움광 2개를 추가
@@ -2148,9 +2281,14 @@ export function createRiftWorld() {
   riftGroup.add(riftLight);
   scene.add(riftGroup);
 
+  // 보스 3기가 기다리는 요새 안뜰 — 잡동사니가 안뜰을 파고들지 않도록 이 구역만 비워 둔다
+  const isClear = (x, z, avoid, extra = 0) => avoid.every((a) => Math.hypot(x - a.x, z - a.z) > a.r + extra);
+  const fortressAvoid = [{ x: 0, z: -30, r: 15 }];
+
   // 갈라진 대지 — 초목 없이 부서진 바위와 결정체로만 채워 황폐한 격전지 느낌을 줌
   for (let i = 0; i < 55; i++) {
     const { x, z } = scatterPoint(6, RIFT_RADIUS - 2);
+    if (!isClear(x, z, fortressAvoid)) continue;
     const rock = createRock(true);
     rock.position.set(x, 0, z);
     const s = 0.9 + Math.random() * 1.3;
@@ -2160,6 +2298,7 @@ export function createRiftWorld() {
   const crystals = [];
   for (let i = 0; i < 24; i++) {
     const { x, z } = scatterPoint(8, RIFT_RADIUS - 4);
+    if (!isClear(x, z, fortressAvoid)) continue;
     const crystal = createCorruptCrystal();
     crystal.position.set(x, 0, z);
     crystal.rotation.y = Math.random() * Math.PI * 2;
@@ -2178,8 +2317,16 @@ export function createRiftWorld() {
     ruinCores.push(ruin.userData.core);
   }
 
+  // 균열 요새 — 보스 3기(균열 파수병/균열포식자/태초의 파괴자)가 지키는 안뜰. 콜로세움+성(타락지대)
+  // 다음 스테이지도 "성을 공략한다"는 그림을 이어가도록 스테이지 후반부에 세운 요새.
+  const fortress = createFortress({
+    wallColor: 0x4a4066, darkColor: 0x3a3252, roofColor: 0x2e2842, orbColor: 0x9fd8ff, radius: 14,
+  });
+  fortress.position.set(0, 0, -30);
+  scene.add(fortress);
+
   // 둘러싼 암벽 (탈출 불가 경계) — 배경 하늘과 구분이 가도록 완전한 검정에서 살짝 띄움
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x1c1c2c, flatShading: true });
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x3a3a52, flatShading: true });
   const wallSegments = 18;
   for (let i = 0; i < wallSegments; i++) {
     const angle = (i / wallSegments) * Math.PI * 2;
@@ -2212,9 +2359,12 @@ export function createRiftWorld() {
     for (const core2 of ruinCores) {
       if (core2) core2.position.y = 1.1 + Math.sin(elapsed * 1.5) * 0.08;
     }
+    const orbPulse = 1 + Math.sin(elapsed * 1.8) * 0.12;
+    fortress.userData.orb.scale.set(orbPulse, orbPulse, orbPulse);
+    updateFortressReveal(fortress, dt);
   }
 
-  return { scene, update, radius: RIFT_RADIUS };
+  return { scene, update, radius: RIFT_RADIUS, fortress };
 }
 
 // --- 스테이지 7: 얼어붙은 봉우리 — '태초의 균열'을 정화한 뒤 그 위에서 새어 나오는 한기를 뒤쫓아
@@ -2229,7 +2379,7 @@ export function createFrozenPeakWorld() {
   });
 
   const isClear = (x, z, avoid, extra = 0) => avoid.every((a) => Math.hypot(x - a.x, z - a.z) > a.r + extra);
-  const avoid = [{ x: 0, z: 8, r: 6 }, { x: 0, z: -34, r: 8 }];
+  const avoid = [{ x: 0, z: 8, r: 6 }, { x: 0, z: -30, r: 16 }];
 
   for (let i = 0; i < 34; i++) {
     const { x, z } = scatterPoint(9, FROZEN_PEAK_RADIUS - 3);
@@ -2275,6 +2425,14 @@ export function createFrozenPeakWorld() {
   scene.add(runeCircle);
   const runeCore = runeCircle.userData.core;
 
+  // 서리 요새 — 보스 4기(서리 파수병/빙하 포식자/얼음 거인/서리 군주)가 지키는 안뜰.
+  // 타락지대(콜로세움+성) 이후 스테이지들이 계속 "성을 공략한다"는 그림을 이어가는 마지막 요새.
+  const fortress = createFortress({
+    wallColor: 0x5a6f8c, darkColor: 0x455a74, roofColor: 0x384c64, orbColor: 0xbfe8ff, radius: 15,
+  });
+  fortress.position.set(0, 0, -30);
+  scene.add(fortress);
+
   // 원경 설산 — 봉우리라는 이름에 맞게 다른 스테이지보다 크고 촘촘하게 둘러쌈
   for (let i = 0; i < 14; i++) {
     const angle = (i / 14) * Math.PI * 2 + Math.random() * 0.12;
@@ -2303,7 +2461,10 @@ export function createFrozenPeakWorld() {
       runeCircle.rotation.y += dt * 0.15;
       if (runeCore) runeCore.position.y = 1.1 + Math.sin(elapsed * 1.5) * 0.08;
     }
+    const orbPulse = 1 + Math.sin(elapsed * 1.8) * 0.12;
+    fortress.userData.orb.scale.set(orbPulse, orbPulse, orbPulse);
+    updateFortressReveal(fortress, dt);
   }
 
-  return { scene, update, radius: FROZEN_PEAK_RADIUS };
+  return { scene, update, radius: FROZEN_PEAK_RADIUS, fortress };
 }

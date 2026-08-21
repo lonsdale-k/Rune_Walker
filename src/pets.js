@@ -2,12 +2,13 @@
 // 코스메틱과 달리 작지만 실질적인 전투 보너스(bonus)를 주고, 장착한 펫은 몬스터를 잡을 때마다
 // 플레이어와 함께 경험치를 얻어 레벨업한다 — 레벨이 오를수록 보너스가 커진다(최대 PET_MAX_LEVEL).
 // 새 펫을 추가하려면 이 배열에 항목 하나만 더하면 된다 (시각적으로는 pet.js가 color/emissive로 구체를 그림).
+// topper — pet.js가 머리 위 장식(꼬마 이펙트)을 고를 때 쓰는 키. ui.js의 아이콘도 같은 키로 그린다.
 export const PET_ITEMS = [
-  { id: 'pet_ember', name: '잔불정령', price: 200, color: 0xff8a3c, emissive: 0xff6a1c, bonus: { atkMult: 0.05 } },
-  { id: 'pet_frost', name: '서리요정', price: 200, color: 0x8fd8ff, emissive: 0x4fb0ff, bonus: { damageReduction: 0.03, maxHpAdd: 15 } },
-  { id: 'pet_verdant', name: '싹눈이', price: 200, color: 0x8fff6a, emissive: 0x4fd02f, bonus: { hpRegen: 1.5 } },
-  { id: 'pet_void', name: '공허나비', price: 260, color: 0xc0a0ff, emissive: 0x6a2fc0, bonus: { critChance: 0.04, moveSpeedMult: 0.03 } },
-  { id: 'pet_gold', name: '황금다람쥐', price: 320, color: 0xffd166, emissive: 0xe0a83f, bonus: { atkMult: 0.03, moveSpeedMult: 0.04 } },
+  { id: 'pet_ember', name: '잔불정령', price: 200, color: 0xff8a3c, emissive: 0xff6a1c, topper: 'flame', bonus: { atkMult: 0.05 } },
+  { id: 'pet_frost', name: '서리요정', price: 200, color: 0x8fd8ff, emissive: 0x4fb0ff, topper: 'ice', bonus: { damageReduction: 0.03, maxHpAdd: 15 } },
+  { id: 'pet_verdant', name: '싹눈이', price: 200, color: 0x8fff6a, emissive: 0x4fd02f, topper: 'leaf', bonus: { hpRegen: 1.5 } },
+  { id: 'pet_void', name: '공허나비', price: 260, color: 0xc0a0ff, emissive: 0x6a2fc0, topper: 'star', bonus: { critChance: 0.04, moveSpeedMult: 0.03 } },
+  { id: 'pet_gold', name: '황금다람쥐', price: 320, color: 0xffd166, emissive: 0xe0a83f, topper: 'ears', bonus: { atkMult: 0.03, moveSpeedMult: 0.04 } },
 ];
 
 export const PET_MAX_LEVEL = 10;
